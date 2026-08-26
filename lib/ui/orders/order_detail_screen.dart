@@ -230,10 +230,12 @@ class OrderDetailScreen extends ConsumerWidget {
                 border: Border.all(color: AppColors.border),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Image.memory(
-                base64Decode(proof.signatureBase64!),
-                fit: BoxFit.contain,
-              ),
+              child: proof.signatureUrl != null && proof.signatureUrl!.isNotEmpty
+                  ? Image.network(proof.signatureUrl!, fit: BoxFit.contain)
+                  : Image.memory(
+                      base64Decode(proof.signatureBase64!),
+                      fit: BoxFit.contain,
+                    ),
             ),
           ],
           if (proof.isOverride) ...[

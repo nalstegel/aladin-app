@@ -8,7 +8,7 @@ import 'app_state.dart';
 import 'repository.dart';
 import 'store.dart';
 
-final storeProvider = Provider<DataStore>((ref) => LocalStore());
+final storeProvider = Provider<DataStore>((ref) => FirestoreStore());
 
 final repositoryProvider =
     StateNotifierProvider<Repository, AppState>((ref) {
