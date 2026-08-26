@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -21,6 +23,7 @@ class Repository extends StateNotifier<AppState> {
 
   final DataStore _store;
   bool _loaded = false;
+  StreamSubscription<AppState>? _remoteSub;
 
   bool get isLoaded => _loaded;
 
@@ -29,6 +32,26 @@ class Repository extends StateNotifier<AppState> {
     state = saved ?? buildSeedState();
     _loaded = true;
     if (saved == null) await _store.save(state);
+
+    // Spremembe z drugih telefonov sprejmemo takoj, brez ponovnega zagona.
+    // Namenoma NE kličemo _commit — sicer bi vsak prejet posnetek sprožil
+    // nov zapis nazaj v bazo in bi se telefoni vrteli v krogu.
+    _remoteSub = _store.watch().listen(
+      (remote) {
+        if (!mounted) return;
+        // Kdo dela na TEM telefonu, ostane lokalna izbira te naprave.
+        state = remote.copyWith(currentUserId: state.currentUserId);
+      },
+      // Po odjavi pravila zavrnejo branje in poslušalci javijo napako.
+      // To je pričakovano — aplikacija je takrat že na prijavnem zaslonu.
+      onError: (Object _) {},
+    );
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    super.dispose();
   }
 
   void _commit(AppState next) {
@@ -44,6 +67,63 @@ class Repository extends StateNotifier<AppState> {
 
   void setCurrentUser(String userId) =>
       _commit(state.copyWith(currentUserId: userId));
+
+  /// Poveže prijavljeni Firebase račun z zapisom o zaposlenem.
+  ///
+  /// Zapis o zaposlenem je ključen z Auth UID-jem, zato je zgodovina
+  /// ("kdo je skeniral ta kos") vezana na pravi račun in ne več na ime,
+  /// ki si ga je kdorkoli lahko izbral s seznama.
+  ///
+  /// Nov zaposleni je VEDNO delavec. Vloge si nihče ne sme dodeliti sam —
+  /// `firestore.rules` tak zapis zavrne, ker bi si sicer lahko kdorkoli
+  /// nastavil 'admin' in dobil pravico pobrisati bazo. Prvega skrbnika
+  /// ročno nastavi vodja v Firestore konzoli, nato vloge ostalim ureja v
+  /// aplikaciji (Nastavitve → Zaposleni).
+  void bindAuthUser({
+    required String uid,
+    required String email,
+    String? displayName,
+  }) {
+    final existing = state.user(uid);
+
+    if (existing != null) {
+      if (existing.email == email) {
+        _commit(state.copyWith(currentUserId: uid));
+        return;
+      }
+      final users = [...state.users];
+      users[users.indexWhere((u) => u.id == uid)] =
+          existing.copyWith(email: email);
+      _commit(state.copyWith(users: users, currentUserId: uid));
+      return;
+    }
+
+    final user = AppUser(
+      id: uid,
+      name: displayName == null || displayName.trim().isEmpty
+          ? _nameFromEmail(email)
+          : displayName.trim(),
+      email: email,
+      role: UserRole.worker,
+    );
+    _commit(state.copyWith(
+      users: [...state.users, user],
+      currentUserId: uid,
+    ));
+  }
+
+  /// Ob odjavi — dejansko odjavo opravi [AuthService].
+  void clearCurrentUser() => _commit(state.copyWith(clearCurrentUser: true));
+
+  /// "marko.novak@..." → "Marko Novak", dokler si imena ne popravi sam.
+  static String _nameFromEmail(String email) {
+    final local = email.split('@').first.replaceAll(RegExp(r'[._\-]+'), ' ');
+    final words = local.split(' ').where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return 'Zaposleni';
+    return words
+        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+        .join(' ');
+  }
 
   void upsertUser(AppUser user) {
     final list = [...state.users];

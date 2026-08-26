@@ -35,6 +35,13 @@ class AppState {
     return null;
   }
 
+  AppUser? user(String id) {
+    for (final u in users) {
+      if (u.id == id) return u;
+    }
+    return null;
+  }
+
   Customer? customer(String id) {
     for (final c in customers) {
       if (c.id == id) return c;
@@ -100,6 +107,7 @@ class AppState {
     List<AppUser>? users,
     String? currentUserId,
     int? nextOrderNumber,
+    bool clearCurrentUser = false,
   }) =>
       AppState(
         customers: customers ?? this.customers,
@@ -108,7 +116,8 @@ class AppState {
         rugTypes: rugTypes ?? this.rugTypes,
         extraTemplates: extraTemplates ?? this.extraTemplates,
         users: users ?? this.users,
-        currentUserId: currentUserId ?? this.currentUserId,
+        currentUserId:
+            clearCurrentUser ? null : (currentUserId ?? this.currentUserId),
         nextOrderNumber: nextOrderNumber ?? this.nextOrderNumber,
       );
 
