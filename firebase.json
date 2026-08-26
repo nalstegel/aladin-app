@@ -1,0 +1,27 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "aladin-app-d9427",
+          "appId": "1:450584317434:android:ed06d60f4f17987ae3e843",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "aladin-app-d9427",
+          "configurations": {
+            "android": "1:450584317434:android:ed06d60f4f17987ae3e843"
+          }
+        }
+      }
+    }
+  }
+}

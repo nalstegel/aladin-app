@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "450584317434",
+    "project_id": "aladin-app-d9427",
+    "storage_bucket": "aladin-app-d9427.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:450584317434:android:ed06d60f4f17987ae3e843",
+        "android_client_info": {
+          "package_name": "si.aladin.aladin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDhIFv9TLzJDAOaPZ0sj4dhxMMMePp4sHA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
