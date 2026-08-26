@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../data/auth.dart';
 import '../../data/providers.dart';
+import '../../data/repository.dart';
+import '../../models/app_user.dart';
 import '../../models/catalog.dart';
 import '../../models/enums.dart';
 import '../widgets/common.dart';
@@ -57,7 +60,9 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                       ),
                       Text(
-                        user?.role.label ?? '',
+                        [user?.role.label, user?.email]
+                            .where((e) => e != null && e.isNotEmpty)
+                            .join(' · '),
                         style: const TextStyle(
                           fontSize: 13,
                           color: AppColors.textMuted,
@@ -67,8 +72,8 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => _switchUser(context, ref),
-                  child: const Text('Zamenjaj'),
+                  onPressed: () => _signOut(context, ref),
+                  child: const Text('Odjava'),
                 ),
               ],
             ),
@@ -190,6 +195,15 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 8),
           ],
           const SectionHeader('Zaposleni'),
+          if (user?.isAdmin ?? false)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Kot skrbnik lahko urejaš vloge in dostop. Nov zaposleni se '
+                'na seznamu pojavi sam, ko se prvič prijavi.',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
           for (final u in state.users) ...[
             AppCard(
               child: Row(
@@ -200,13 +214,21 @@ class SettingsScreen extends ConsumerWidget {
                       children: [
                         Text(
                           u.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
+                            color: u.active ? null : AppColors.textMuted,
+                            decoration: u.active
+                                ? null
+                                : TextDecoration.lineThrough,
                           ),
                         ),
                         Text(
-                          u.role.label,
+                          [
+                            u.role.label,
+                            if (u.email.isNotEmpty) u.email,
+                            if (!u.active) 'nima dostopa',
+                          ].join(' · '),
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textMuted,
@@ -221,6 +243,12 @@ class SettingsScreen extends ConsumerWidget {
                       color: AppColors.ready,
                       dense: true,
                     ),
+                  if ((user?.isAdmin ?? false) && u.id != user?.id)
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      tooltip: 'Uredi zaposlenega',
+                      onPressed: () => _editUser(context, repo, u),
+                    ),
                 ],
               ),
             ),
@@ -232,41 +260,20 @@ class SettingsScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Podatki so trenutno shranjeni lokalno na tej napravi. '
-                  'Za skupno delo več telefonov se priklopi Firebase.',
+                  'Podatki so v skupni bazi (Firebase). Vsi zaposleni vidijo '
+                  'iste podatke, spremembe se sproti prenašajo med telefoni.',
                   style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                 ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Ponastavi na demo podatke?'),
-                        content: const Text(
-                          'Vsa lokalno vnesena naročila in stranke bodo '
-                          'izbrisani.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Prekliči'),
-                          ),
-                          FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.danger,
-                            ),
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Ponastavi'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (ok == true) await repo.resetToSeed();
-                  },
-                  icon: const Icon(Icons.restart_alt),
-                  label: const Text('Ponastavi demo podatke'),
-                ),
+                // Ponastavitev pobriše SKUPNO bazo, ne le tega telefona —
+                // zato je na voljo samo skrbniku.
+                if (user?.isAdmin ?? false) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => _resetData(context, repo),
+                    icon: const Icon(Icons.restart_alt),
+                    label: const Text('Ponastavi demo podatke'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -275,49 +282,158 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _switchUser(BuildContext context, WidgetRef ref) {
-    final state = ref.read(repositoryProvider);
-    showModalBottomSheet(
+  /// Skrbnik ureja ime, vlogo in dostop drugih zaposlenih.
+  ///
+  /// Svojega zapisa namenoma ni mogoče urejati tu — sicer bi si zadnji
+  /// skrbnik lahko odvzel vlogo in nihče več ne bi mogel dodeljevati
+  /// pravic (`firestore.rules` tega tudi ne dovoli).
+  Future<void> _editUser(
+    BuildContext context,
+    Repository repo,
+    AppUser target,
+  ) async {
+    final name = TextEditingController(text: target.name);
+    var role = target.role;
+    var active = target.active;
+
+    final ok = await showDialog<bool>(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Kdo dela?',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setInner) => AlertDialog(
+          title: Text(target.name),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: name,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Ime'),
               ),
-            ),
-            for (final u in state.users.where((u) => u.active))
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                  child: Text(
-                    u.name.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+              const SizedBox(height: 16),
+              const Text(
+                'Vloga',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 6),
+              SegmentedButton<UserRole>(
+                segments: [
+                  for (final r in UserRole.values)
+                    ButtonSegment(value: r, label: Text(r.label)),
+                ],
+                selected: {role},
+                onSelectionChanged: (s) => setInner(() => role = s.first),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Ima dostop'),
+                subtitle: const Text(
+                  'Izklop obdrži zgodovino, a zaposlenega skrije s seznamov.',
+                  style: TextStyle(fontSize: 12),
                 ),
-                title: Text(u.name),
-                subtitle: Text(u.role.label),
-                onTap: () {
-                  ref.read(repositoryProvider.notifier).setCurrentUser(u.id);
-                  Navigator.pop(context);
-                },
+                value: active,
+                onChanged: (v) => setInner(() => active = v),
               ),
-            const SizedBox(height: 12),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Prekliči'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Shrani'),
+            ),
           ],
         ),
       ),
     );
+
+    if (ok == true) {
+      repo.upsertUser(target.copyWith(
+        name: name.text.trim().isEmpty ? target.name : name.text.trim(),
+        role: role,
+        active: active,
+      ));
+    }
+    name.dispose();
+  }
+
+  /// Ponastavitev izbriše skupno bazo za vse zaposlene, zato zahteva
+  /// izrecno potrditev z vpisom besede — en napačen dotik ne sme
+  /// pobrisati podjetju vseh naročil.
+  Future<void> _resetData(BuildContext context, Repository repo) async {
+    final confirm = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ponastavi na demo podatke?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Izbrisana bodo VSA naročila, kosi in stranke iz skupne baze '
+              '— pri vseh zaposlenih, ne le na tem telefonu. Tega ni mogoče '
+              'razveljaviti.\n\nZa potrditev vpiši PONASTAVI:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirm,
+              autocorrect: false,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(hintText: 'PONASTAVI'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Prekliči'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(
+              context,
+              confirm.text.trim().toUpperCase() == 'PONASTAVI',
+            ),
+            child: const Text('Ponastavi'),
+          ),
+        ],
+      ),
+    );
+    confirm.dispose();
+    if (ok == true) await repo.resetToSeed();
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Odjava'),
+        content: const Text(
+          'Za nadaljevanje dela se bo treba znova prijaviti s svojim '
+          'e-naslovom in geslom.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Prekliči'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Odjavi se'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    ref.read(repositoryProvider.notifier).clearCurrentUser();
+    await ref.read(authServiceProvider).signOut();
   }
 
   Future<void> _editRugType(
