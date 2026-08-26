@@ -1,0 +1,64 @@
+rules_version = '2';
+
+// Dostop imajo samo prijavljeni zaposleni. Račune ustvarja vodja v
+// Firebase konzoli (Authentication → Users) — javne registracije ni.
+//
+// Poslovni podatki (naročila, kosi, stranke, cenik) so skupni: vsak
+// prijavljen zaposleni jih sme brati in spreminjati, ker tudi v resnici
+// vsi delajo na istih naročilih. Ločevanje po vlogi velja samo za
+// dokumente zaposlenih, ker vloga odloča o pravicah.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid))
+             .data.role;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && myRole() == 'admin';
+    }
+
+    // Zapis o zaposlenem je ključen z Auth UID-jem, zato je zgodovina
+    // kosov vezana na pravi račun.
+    match /users/{userId} {
+      allow read: if signedIn();
+
+      // Ob prvi prijavi si zaposleni ustvari svoj zapis — vedno kot
+      // delavec. Če bi si smel vlogo izbrati sam, bi si jo lahko s
+      // podtaknjenim odjemalcem nastavil na 'admin' in dobil pravico
+      // pobrisati celo bazo. PRVEGA skrbnika zato ročno nastavi vodja v
+      // Firestore konzoli (users/{uid} → role: admin), nato lahko vloge
+      // ostalim ureja kar v aplikaciji.
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'worker';
+
+      // Svoj zapis smeš urejati (npr. popraviti ime), NE pa si spremeniti
+      // vloge ali se sam znova aktivirati.
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.active == resource.data.active;
+
+      // Skrbnik ureja vloge in aktivnost vseh.
+      allow create, update: if isAdmin();
+
+      // Zaposlenih ne brišemo — na njih visi zgodovina kosov.
+      // Namesto tega se jim nastavi active: false.
+    }
+
+    match /customers/{id} { allow read, write: if signedIn(); }
+    match /orders/{id}    { allow read, write: if signedIn(); }
+    match /items/{id}     { allow read, write: if signedIn(); }
+    match /rugTypes/{id}  { allow read, write: if signedIn(); }
+    match /extraTemplates/{id} { allow read, write: if signedIn(); }
+    match /meta/{id}      { allow read, write: if signedIn(); }
+  }
+}
