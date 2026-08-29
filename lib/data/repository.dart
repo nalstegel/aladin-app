@@ -417,7 +417,7 @@ class Repository extends StateNotifier<AppState> {
     _saveItem(updated);
   }
 
-  /// Končno sesanje: doplačila, popust, potrditev cene → READY.
+  /// Končno sesanje: doplačila, popust, potrditev cene → Pripravljeno.
   void finishItem(
     String itemId, {
     required List<AppliedExtra> extras,

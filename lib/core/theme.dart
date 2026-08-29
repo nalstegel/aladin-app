@@ -9,6 +9,7 @@ class AppColors {
   static const surface = Color(0xFFF6F7F9);
   static const card = Colors.white;
   static const border = Color(0xFFE4E7EC);
+  static const text = Color(0xFF101828);
   static const textMuted = Color(0xFF667085);
 
   static const awaitingPickup = Color(0xFF7C3AED);
@@ -64,6 +65,7 @@ class AppIcons {
 ThemeData buildAppTheme() {
   final base = ThemeData(
     useMaterial3: true,
+    fontFamily: 'Inter',
     colorScheme: ColorScheme.fromSeed(
       seedColor: AppColors.primary,
       brightness: Brightness.light,
@@ -78,11 +80,12 @@ ThemeData buildAppTheme() {
       elevation: 0,
       centerTitle: false,
       titleTextStyle: TextStyle(
-        color: Color(0xFF101828),
+        fontFamily: 'Inter',
+        color: AppColors.text,
         fontSize: 20,
         fontWeight: FontWeight.w700,
       ),
-      iconTheme: IconThemeData(color: Color(0xFF101828)),
+      iconTheme: IconThemeData(color: AppColors.text),
     ),
     cardTheme: CardThemeData(
       color: AppColors.card,

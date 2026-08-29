@@ -71,17 +71,31 @@ lib/
   data/
     repository.dart   vsa poslovna logika in prehodi stanj
     app_state.dart    nespremenljivo stanje celotne aplikacije
-    store.dart        shramba (lokalna JSON datoteka / pomnilnik za teste)
+    store.dart        shramba (Firestore / pomnilnik za teste)
+    auth.dart         prijava zaposlenih
+    alerts.dart       obvestila, izpeljana iz stanja naročil
+    push.dart         potisna obvestila
     seed.dart         demo podatki
     providers.dart    Riverpod dostop do stanja
   ui/
-    dashboard/   "Danes" — kdo je za prevzem, kdo za vračilo, kaj je v obratu
-    orders/      trije zavihki (dostava / osebni prevzem / B2B), etikete, vračilo
-    rugs/        posamezna preproga, vnos mer, končna obdelava in cena
-    scanner/     QR skener (navadni in hitri način)
-    customers/   CRM
-    settings/    cenik, doplačila, zaposleni
+    dashboard/     "Danes" — kdo je za prevzem, kdo za vračilo, kaj je v obratu
+    orders/        aktivna in zaključena naročila, etikete, vračilo
+    rugs/          posamezna preproga, vnos mer, končna obdelava in cena
+    scanner/       QR skener, delovni seznami po korakih
+    customers/     CRM
+    notifications/ zvonček z obvestili
+    more/          cenik, statistika, uporabniki, navodila, podpora
+functions/       potisna obvestila (Cloud Functions) — glej functions/README.md
 ```
+
+## Zasloni
+
+Spodnja vrstica ima pet zavihkov: **Danes**, **Naročila**, veliki gumb za
+**skeniranje** na sredini, **Stranke** in **Več**.
+
+Naročila so v enem seznamu z zavihkoma *Aktivna* in *Zaključena*; kanal
+(dostava / pripeljano / B2B) je oznaka na kartici in filter v glavi, ne več
+ločen zavihek.
 
 ## QR etikete
 
@@ -90,10 +104,12 @@ preprogo, ne celotnega naročila. Etikete se tiskajo kot A4 pola z mrežo 3 × 6
 (**Naročilo → ikona QR → Natisni**); na etiketi so ime stranke, številka
 naročila, `KOS 2/3` in koda.
 
-Skener ima dva načina:
+Skeniranje odpre podrobnosti preproge. Za delo ob stroju je **hitri način**:
+vsak skeniran kos gre samodejno korak naprej, brez dotikanja zaslona.
 
-- **Odpri kos** — skeniranje odpre podrobnosti preproge
-- **Hitri način** — vsak skeniran kos gre samodejno korak naprej (delo ob stroju)
+Pod okvirjem kamere so bližnjice do delovnih seznamov po korakih (kaj čaka na
+pranje, kaj je v sušenju …). Če je etiketa strgana, je tam tudi **ročni vnos
+kode**.
 
 ## Cene
 
@@ -101,27 +117,33 @@ Skener ima dva načina:
 (npr. 3 m²). Nato doplačila (%, €/m², pavšal) in popust. Popust, dogovorjen s
 stranko, se predlaga samodejno. Delavec lahko končno ceno tudi ročno določi.
 
-## Trenutno stanje in naslednji korak
+## Podatki
 
-Podatki so shranjeni **lokalno na napravi** (JSON datoteka). Aplikacija je v
-celoti delujoča, a se med telefoni še ne sinhronizira.
+Podatki so v skupni bazi (Firebase Firestore). Vsi zaposleni vidijo iste
+podatke, spremembe se sproti prenašajo med telefoni. Vsak zaposleni ima svoj
+račun (e-naslov in geslo), da je v zgodovini vsakega kosa zapisano, kdo je
+korak dejansko izvedel.
 
-Za skupno delo več zaposlenih je predviden Firebase. Zamenjati je treba samo
-izvedbo `DataStore` v `lib/data/store.dart` — `Repository` in celoten UI ostaneta
-nespremenjena. Koraki:
+Firestore ima vgrajeno delo brez povezave, kar je v pralnici brez zanesljivega
+signala bistveno: aplikacija dela naprej, spremembe se oddajo, ko se signal
+vrne.
 
-1. `flutterfire configure` (potrebna je prijava v Google račun)
-2. dodati `firebase_core`, `cloud_firestore`, `firebase_auth`, `firebase_storage`
-3. `FirestoreStore implements DataStore` — zbirke `orders`, `items`,
-   `customers`, `rugTypes`, `extras`, `users`
-4. podpise prestaviti iz base64 v Firebase Storage
-5. prijavo zaposlenih preklopiti z izbirnika imen na Firebase Auth
+## Obvestila
 
-Firestore ima offline persistence vgrajen, kar je za delo v pralnici brez
-zanesljivega signala bistveno.
+Zvonček na zaslonu **Danes** dela takoj — obvestila (pripravljena naročila,
+zamude) izračuna iz podatkov, ki so že v bazi.
 
-## Za iOS
+**Potisna obvestila so napisana, a še ne delujejo.** Zahtevajo nekaj korakov v
+Firebase konzoli, ki jih lahko opravi samo lastnik računa — opisani so v
+[functions/README.md](functions/README.md).
 
-Na tem računalniku Xcode ni nameščen, zato je bila aplikacija razvita in
-preizkušena na Androidu. Za iOS gradnjo je potreben Xcode; dovoljenje za kamero
-je v `ios/Runner/Info.plist` že pripravljeno.
+## Stanje po platformah
+
+- **Android** — razvito in preizkušeno, vključno s podpisanimi izdajami
+  (`tool/release_android.sh`).
+- **iOS** — nastavitve so pripravljene, dovoljenje za kamero je v
+  `ios/Runner/Info.plist`. Podrobno stanje in kaj še manjka je v
+  [plan.md](plan.md), razdelek 4.
+
+Podrobnosti o tem, kaj je narejeno in kaj še ne, so v [plan.md](plan.md) —
+tam je tudi izvirna zahteva lastnika.

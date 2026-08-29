@@ -97,7 +97,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: const Icon(
-                          Icons.layers_outlined,
+                          Icons.qr_code_scanner,
                           color: Colors.white,
                           size: 30,
                         ),

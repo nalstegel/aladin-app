@@ -121,7 +121,7 @@ AppState buildSeedState() {
       );
 
   // -------------------------------------------------- #1847 primer iz koncepta
-  // Novak ima 3 kose: dva sta READY, tretji je še v sušilnici.
+  // Novak ima 3 kose: dva sta pripravljena, tretji je še v sušilnici.
   orders.add(WorkOrder(
     id: '1847',
     channel: OrderChannel.dropoff,

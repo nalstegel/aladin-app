@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../models/enums.dart';
+import '../../models/rug_item.dart';
 
 /// Barvna oznaka statusa — glavni vizualni signal v celotni aplikaciji.
 class StatusChip extends StatelessWidget {
@@ -61,45 +62,143 @@ class StatusChip extends StatelessWidget {
   }
 }
 
-/// "2/3 READY" s črtico napredka.
-class ReadyProgress extends StatelessWidget {
-  const ReadyProgress({
+/// Napredek naročila glede na korak, v katerem je največ kosov.
+///
+/// Delavca zanima, koliko kosov je *prestopilo* korak, ki naročilo trenutno
+/// zadržuje — zato "3/8 oprano" in ne "5/8 na pranju". Ko je največ kosov že
+/// pripravljenih, se meri kar pripravljenost.
+class StageProgress {
+  StageProgress._(this.done, this.total, this.label, this.color);
+
+  final int done;
+  final int total;
+  final String label;
+  final Color color;
+
+  bool get complete => total > 0 && done == total;
+
+  factory StageProgress.of(List<RugItem> items) {
+    if (items.isEmpty) {
+      return StageProgress._(0, 0, 'ni kosov', AppColors.textMuted);
+    }
+
+    final counts = <RugStatus, int>{};
+    for (final i in items) {
+      counts[i.status] = (counts[i.status] ?? 0) + 1;
+    }
+    var dominant = items.first.status;
+    for (final e in counts.entries) {
+      if (e.value > (counts[dominant] ?? 0)) dominant = e.key;
+    }
+
+    // Pri pripravljenih in vrnjenih merimo doseženo stanje, sicer pa koliko
+    // kosov je korak, ki jih zadržuje, že prestopilo.
+    final atOrPast = dominant.order >= RugStatus.ready.order;
+    final milestone = atOrPast ? RugStatus.ready : dominant;
+    final done = items
+        .where((i) => atOrPast
+            ? i.status.order >= milestone.order
+            : i.status.order > milestone.order)
+        .length;
+
+    return StageProgress._(
+      done,
+      items.length,
+      milestone.doneLabel,
+      done == items.length ? AppColors.ready : AppColors.primary,
+    );
+  }
+}
+
+/// Črtica napredka brez razlage koraka — tam, kjer je pomen že iz konteksta
+/// jasen (npr. koliko kosov je poskeniranih pri vračilu).
+class PlainProgressBar extends StatelessWidget {
+  const PlainProgressBar({
     super.key,
-    required this.ready,
+    required this.done,
     required this.total,
-    this.showLabel = true,
+    this.label,
+    this.color,
   });
 
-  final int ready;
+  final int done;
   final int total;
-  final bool showLabel;
+  final String? label;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final complete = total > 0 && ready == total;
-    final color = complete ? AppColors.ready : AppColors.primary;
+    final complete = total > 0 && done == total;
+    final c = color ?? (complete ? AppColors.ready : AppColors.primary);
     return Row(
       children: [
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
-              value: total == 0 ? 0 : ready / total,
+              value: total == 0 ? 0 : done / total,
               minHeight: 6,
               backgroundColor: AppColors.border,
-              valueColor: AlwaysStoppedAnimation(color),
+              valueColor: AlwaysStoppedAnimation(c),
+            ),
+          ),
+        ),
+        if (label != null) ...[
+          const SizedBox(width: 10),
+          Text(
+            '$done/$total ${label!}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: c,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Črtica napredka s podpisom, npr. "3/8 oprano".
+class StageProgressBar extends StatelessWidget {
+  const StageProgressBar(this.progress, {super.key, this.showLabel = true});
+
+  final StageProgress progress;
+  final bool showLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress.total == 0 ? 0 : progress.done / progress.total,
+              minHeight: 6,
+              backgroundColor: AppColors.border,
+              valueColor: AlwaysStoppedAnimation(progress.color),
             ),
           ),
         ),
         if (showLabel) ...[
           const SizedBox(width: 10),
-          Text(
-            '$ready/$total READY',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (progress.complete) ...[
+                Icon(Icons.check_circle, size: 14, color: progress.color),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                '${progress.done}/${progress.total} ${progress.label}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: progress.color,
+                ),
+              ),
+            ],
           ),
         ],
       ],
@@ -316,6 +415,7 @@ class AppCard extends StatelessWidget {
     this.onTap,
     this.padding = const EdgeInsets.all(14),
     this.borderColor,
+    this.accent,
   });
 
   final Widget child;
@@ -323,22 +423,278 @@ class AppCard extends StatelessWidget {
   final EdgeInsets padding;
   final Color? borderColor;
 
+  /// Barvni trak ob levem robu — glavni signal statusa na seznamih.
+  final Color? accent;
+
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(16);
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: radius,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: radius,
         child: Container(
-          padding: padding,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: radius,
             border: Border.all(color: borderColor ?? AppColors.border),
           ),
-          child: child,
+          child: ClipRRect(
+            borderRadius: radius,
+            // IntrinsicHeight je nujen: AppCard je vedno v ListView (neomejena
+            // višina), zato bi "stretch" brez njega zahteval neskončno visok
+            // trak in podrl postavitev.
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (accent != null) Container(width: 4, color: accent),
+                  Expanded(
+                    child: Padding(padding: padding, child: child),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// Velik naslov zaslona z datumom/podnaslovom in dejanjem na desni.
+class PageHeader extends StatelessWidget {
+  const PageHeader(this.title, {super.key, this.subtitle, this.trailing});
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                    height: 1.1,
+                  ),
+                ),
+                if (subtitle != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+/// Krog z začetnicami — na seznamu strank in zaposlenih.
+class AvatarCircle extends StatelessWidget {
+  const AvatarCircle(this.name, {super.key, this.color, this.radius = 21});
+
+  final String name;
+  final Color? color;
+  final double radius;
+
+  static String initials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) {
+      final p = parts.first;
+      return (p.length == 1 ? p : p.substring(0, 2)).toUpperCase();
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? AppColors.primary;
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: c.withValues(alpha: 0.12),
+      child: Text(
+        initials(name),
+        style: TextStyle(
+          color: c,
+          fontWeight: FontWeight.w800,
+          fontSize: radius * 0.62,
+        ),
+      ),
+    );
+  }
+}
+
+/// Vrstica v meniju "Več" — ikona, naziv, puščica.
+class MenuRow extends StatelessWidget {
+  const MenuRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.trailing,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Widget? trailing;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 21, color: iconColor ?? AppColors.text),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.text,
+                ),
+              ),
+            ),
+            if (trailing != null) ...[trailing!, const SizedBox(width: 8)],
+            const Icon(Icons.chevron_right,
+                size: 20, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Skupina vrstic menija v eni kartici, z ločilnicami med njimi.
+class MenuGroup extends StatelessWidget {
+  const MenuGroup({super.key, required this.rows});
+
+  final List<Widget> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          children: [
+            for (var i = 0; i < rows.length; i++) ...[
+              if (i > 0)
+                const Padding(
+                  padding: EdgeInsets.only(left: 49),
+                  child: Divider(height: 1),
+                ),
+              rows[i],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pilula za filtriranje seznama.
+class FilterPill extends StatelessWidget {
+  const FilterPill({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Iskalno polje s pripravljeno ikono.
+class SearchField extends StatelessWidget {
+  const SearchField({
+    super.key,
+    required this.hint,
+    required this.onChanged,
+    this.controller,
+  });
+
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: const Icon(Icons.search, size: 20),
+        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
       ),
     );
   }

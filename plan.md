@@ -440,7 +440,83 @@ compile with R8 minification on (the usual place release builds break).
   machine). This must happen on a Mac that has Xcode before any iOS work
   can proceed.
 
-### 4.4 — Nice-to-have, not urgent
+### 4.4 — UI/UX prenova po predlogi — DONE (2026-08-29)
+
+Lastnik je dostavil predlogo petih zaslonov (Danes, Naročila, Skeniraj,
+Stranke, Več). Prenova ni bila samo kozmetična — trije od petih zaslonov so
+dobili drugačno strukturo. Odločitve, sprejete ob predaji predloge:
+
+**Oblikovni sistem**
+- Pisava **Inter**, priložena v `assets/fonts/` (~2 MB). Namenoma ni prek
+  `google_fonts`, ki jo prenese ob prvem zagonu — v pralnici ni zanesljivega
+  signala.
+- Ikone ostajajo Material Symbols, obarvane po statusu. Pravilo "ena barva na
+  status" iz `core/theme.dart` je ostalo nedotaknjeno.
+- `AppCard` ima zdaj `accent` — barvni trak ob levem robu.
+
+**Preimenovanja statusov** (`models/enums.dart`, en sam vir):
+`READY → Pripravljeno`, `Čaka na pranje → Na pranju`, `Sušenje → V sušenju`,
+`Končna obdelava → Mere in cena`, `Osebni prevzem → Pripeljano`.
+`Vrnjeno` je **namenoma ostalo** — predloga je pisala "Vračano", kar se bere
+kot postopek v teku, status pa pomeni, da je preproga že vrnjena.
+
+**Danes**
+- Pet ploščic namesto štirih: Prevzem / Vračilo / Sušenje / **Mere in cena** /
+  Zamude, v dveh vrstah. Peta je dodana zato, ker so bližnjice pod skenerjem
+  ostale pri petih korakih brez `finishing` — brez te ploščice do čakalne
+  vrste za merjenje ne bi vodilo nič.
+- Ploščice so klikljive: skočijo na razdelek ali odprejo delovni seznam.
+- Kartice imajo gumb: **Prevzemi** izvede prevzem z enim dotikom, **Vrni**
+  pa samo odpre postopek vračila — nikoli ga ne izvede. Varovalka
+  "poskeniraj vse kose + podpis" ostaja edina pot do zaključka.
+
+**Naročila**
+- Trije kanalski zavihki so zamenjani z dvema (Aktivna / Zaključena). Kanal je
+  zdaj oznaka na kartici, filtrira pa se prek ikone v glavi (kanal + korak).
+- Napredek na kartici meri korak, v katerem obtiči največ kosov — "3/8
+  oprano", ne "5/8 na pranju". Logika je v `StageProgress` v
+  `ui/widgets/common.dart`, pokrita s `test/stage_progress_test.dart`.
+- FAB "Novo naročilo" je ostal; v predlogi ga ni bilo, druge poti do sprejema
+  naročila pa ni. `NewOrderScreen.initialChannel` je zdaj neobvezen.
+
+**Skeniraj**
+- Zdaj je pravi zavihek z **živo kamero**, ne več potisnjen zaslon. Kamera
+  teče samo, kadar je zavihek izbran (`ScannerScreen.active`) — sicer bi
+  praznila baterijo ves čas.
+- Pet bližnjic pod okvirjem odpre **delovne sezname** kosov v tem statusu.
+  Ne nastavljajo statusa.
+- Nov **ročni vnos kode** za strgane etikete.
+- **Hitri način je ostal.** V predlogi zanj ni bilo gumba, a je edini razlog,
+  da je skeniranje ob stroju hitro — brisanje bi upočasnilo delo v obratu.
+- Celozaslonski skener živi naprej kot `ScanCaptureScreen`, ker ga postopek
+  vračila potrebuje.
+
+**Več**
+- Iz enega dolgega zaslona nastal razdelilnik z desetimi vrsticami.
+  `ui/settings/settings_screen.dart` je izbrisan, vsebina razdeljena v
+  `ui/more/`.
+- **Uporabniki** vsebuje tudi lastni račun in **Odjavo** (v predlogi ju ni
+  bilo nikjer).
+- **Zaključena naročila** skoči na zavihek v Naročilih (prek
+  `data/navigation.dart`), namesto da bi isti seznam obstajal dvakrat.
+- **Varnostne kopije** so **samo pregled stanja, brez izvoza.** Izvožena
+  datoteka bi vsebovala imena, telefone in naslove vseh strank in bi v
+  trenutku deljenja zapustila varnostna pravila. Razlog je zapisan tudi
+  na samem zaslonu.
+- **Podpora** nima vpisanih kontaktov — v projektu jih ni nikjer. Zaslon to
+  odkrito pove; vrednosti so na vrhu
+  `ui/more/support_screen.dart` (`_supportPhone`, `_supportEmail`).
+  **To je edina stvar iz prenove, ki čaka na lastnika.**
+
+**Obvestila — koda narejena, storitev ne deluje**
+Zvonček na Danes dela že zdaj: obvestila izpelje iz podatkov v bazi
+(`data/alerts.dart`), prebrana pa hrani po napravi. Potisna obvestila so
+napisana (`data/push.dart`, `functions/index.js`), a **ne delujejo, dokler
+lastnik ne opravi korakov v `functions/README.md`** — vklop Cloud Messaging,
+preklop na Blaze, `firebase deploy --only functions`. Na iOS so blokirana
+še z Apple Developer računom in APNs ključem.
+
+### 4.5 — Nice-to-have, not urgent
 - SMS/email confirmation to customer after return (spec mentions this as
   "po želji" / optional). Needs a third-party service (Twilio/SendGrid or
   similar) and the owner's account — not started, low priority.

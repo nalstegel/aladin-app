@@ -9,21 +9,36 @@ import '../../models/order.dart';
 import '../widgets/common.dart';
 import 'order_detail_screen.dart';
 
+/// Dejanje, ki ga je mogoče sprožiti kar s kartice na nadzorni plošči.
+class OrderCardAction {
+  const OrderCardAction({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+}
+
 class OrderCard extends ConsumerWidget {
-  const OrderCard(this.order, {super.key, this.showChannel = false});
+  const OrderCard(this.order, {super.key, this.action});
 
   final WorkOrder order;
-  final bool showChannel;
+
+  /// Gumb na dnu kartice ("Prevzemi", "Vrni"). Brez njega je kartica samo
+  /// povezava na podrobnosti.
+  final OrderCardAction? action;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(repositoryProvider);
     final items = state.itemsOf(order.id);
-    final ready = state.readyCount(order.id);
+    final progress = StageProgress.of(items);
     final overdue = order.isOverdue(DateTime.now());
+    final accent = overdue
+        ? AppColors.danger
+        : AppColors.forOrder(order.status);
 
     return AppCard(
-      borderColor: overdue ? AppColors.danger.withValues(alpha: 0.5) : null,
+      accent: accent,
+      borderColor: overdue ? AppColors.danger.withValues(alpha: 0.4) : null,
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -35,20 +50,12 @@ class OrderCard extends ConsumerWidget {
         children: [
           Row(
             children: [
-              if (showChannel) ...[
-                Icon(
-                  AppIcons.forChannel(order.channel),
-                  size: 16,
-                  color: AppColors.forChannel(order.channel),
-                ),
-                const SizedBox(width: 6),
-              ],
               Text(
                 order.number,
                 style: const TextStyle(
-                  fontSize: 13,
+                  fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textMuted,
+                  color: AppColors.text,
                 ),
               ),
               const SizedBox(width: 8),
@@ -58,57 +65,75 @@ class OrderCard extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-              StatusChip.order(order.status, dense: true),
+              const SizedBox(width: 8),
+              StatusChip(
+                label: order.channel.label,
+                color: AppColors.forChannel(order.channel),
+                dense: true,
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          _line(context),
-          const SizedBox(height: 10),
+          _line(),
+          const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  Fmt.pieces(items.length),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textMuted,
-                  ),
+              Icon(
+                overdue ? Icons.warning_amber_rounded : Icons.inventory_2_outlined,
+                size: 15,
+                color: overdue ? AppColors.danger : AppColors.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                Fmt.pieces(items.length),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: overdue ? AppColors.danger : AppColors.textMuted,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: ReadyProgress(ready: ready, total: items.length),
+                child: items.isEmpty
+                    ? const SizedBox.shrink()
+                    : StageProgressBar(progress),
               ),
+              if (action != null) ...[
+                const SizedBox(width: 10),
+                FilledButton(
+                  onPressed: action!.onPressed,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    minimumSize: const Size(0, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  child: Text(action!.label),
+                ),
+              ],
             ],
           ),
           if (overdue) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded,
-                    size: 15, color: AppColors.danger),
-                const SizedBox(width: 5),
-                Text(
-                  'Rok potekel ${Fmt.dateShort(order.dueAt)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.danger,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 6),
+            Text(
+              'Zamuja ${_overdueBy()} · rok ${Fmt.dateShort(order.dueAt)}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.danger,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ],
@@ -116,27 +141,35 @@ class OrderCard extends ConsumerWidget {
     );
   }
 
+  String _overdueBy() {
+    final due = order.dueAt;
+    if (due == null) return '—';
+    final days = DateTime.now().difference(due).inDays;
+    if (days <= 0) return 'manj kot dan';
+    if (days == 1) return '1 dan';
+    if (days == 2) return '2 dni';
+    if (days == 3 || days == 4) return '$days dni';
+    return '$days dni';
+  }
+
   /// Druga vrstica pove tisto, kar delavec potrebuje za naslednji korak:
   /// naslov in uro pri dostavi, rok pri osebnem prevzemu.
-  Widget _line(BuildContext context) {
+  Widget _line() {
     IconData icon;
     String text;
 
     switch (order.status) {
       case OrderStatus.scheduledPickup:
-        icon = Icons.local_shipping_outlined;
-        text = 'Prevzem ${Fmt.dayHeader(order.pickupAt ?? order.createdAt)}'
-            ' ob ${Fmt.time(order.pickupAt)} · ${order.customerAddress}';
+        icon = Icons.schedule;
+        text = '${Fmt.time(order.pickupAt)} · ${order.customerAddress}';
       case OrderStatus.awaitingDelivery:
-        icon = Icons.local_shipping_outlined;
+        icon = Icons.schedule;
         text = order.deliveryAt == null
             ? 'Za vračilo · ${order.customerAddress}'
-            : 'Vračilo ${Fmt.dayHeader(order.deliveryAt!)}'
-                ' ob ${Fmt.time(order.deliveryAt)} · ${order.customerAddress}';
+            : '${Fmt.time(order.deliveryAt)} · ${order.customerAddress}';
       case OrderStatus.awaitingCollection:
-        icon = Icons.storefront_outlined;
-        text = 'Pripravljeno od ${Fmt.dateShort(order.readyAt)}'
-            ' · ${order.customerPhone}';
+        icon = Icons.hourglass_empty;
+        text = 'Čaka od ${Fmt.dateShort(order.readyAt)} · ${order.customerPhone}';
       case OrderStatus.completed:
         icon = Icons.assignment_turned_in_outlined;
         text = 'Zaključeno ${Fmt.dateTime(order.completedAt)}';

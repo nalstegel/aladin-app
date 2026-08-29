@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,13 +8,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'data/auth.dart';
 import 'data/providers.dart';
+import 'data/push.dart';
 import 'firebase_options.dart';
 import 'ui/login_screen.dart';
 import 'ui/shell.dart';
 
+/// Obvestila, ki pridejo, ko aplikacija ne teče. Sistem jih prikaže sam;
+/// tu ni česa delati, funkcija pa mora obstajati in biti na vrhnji ravni.
+@pragma('vm:entry-point')
+Future<void> _onBackgroundMessage(RemoteMessage message) async {}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseMessaging.onBackgroundMessage(_onBackgroundMessage);
   runApp(const ProviderScope(child: AladinApp()));
 }
 
@@ -92,6 +100,9 @@ class _DataGateState extends ConsumerState<_DataGate> {
           email: widget.authUser.email ?? '',
           displayName: widget.authUser.displayName,
         );
+    // Naročnino na obvestila obnovimo šele po prijavi — odjavljen telefon
+    // ne sme dobivati obvestil o naročilih.
+    await ref.read(pushServiceProvider).restore();
   }
 
   @override

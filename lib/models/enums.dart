@@ -6,12 +6,12 @@ enum OrderChannel { delivery, dropoff, b2b }
 extension OrderChannelX on OrderChannel {
   String get label => switch (this) {
         OrderChannel.delivery => 'Dostava',
-        OrderChannel.dropoff => 'Osebni prevzem',
+        OrderChannel.dropoff => 'Pripeljano',
         OrderChannel.b2b => 'B2B',
       };
   String get short => switch (this) {
         OrderChannel.delivery => 'DOST',
-        OrderChannel.dropoff => 'OSEB',
+        OrderChannel.dropoff => 'PRIP',
         OrderChannel.b2b => 'B2B',
       };
 }
@@ -64,20 +64,22 @@ enum RugStatus {
 
 extension RugStatusX on RugStatus {
   String get label => switch (this) {
-        RugStatus.awaitingPickup => 'Za prevzem',
-        RugStatus.awaitingWash => 'Čaka na pranje',
-        RugStatus.drying => 'Sušenje',
-        RugStatus.finishing => 'Končna obdelava',
-        RugStatus.ready => 'READY',
+        RugStatus.awaitingPickup => 'V prevzemu',
+        RugStatus.awaitingWash => 'Na pranju',
+        RugStatus.drying => 'V sušenju',
+        RugStatus.finishing => 'Mere in cena',
+        // Namenoma "Vrnjeno", ne "Vračano" iz predloge: status pomeni, da je
+        // preproga že vrnjena, "Vračano" pa bi se bralo kot postopek v teku.
+        RugStatus.ready => 'Pripravljeno',
         RugStatus.returned => 'Vrnjeno',
       };
 
   /// Besedilo gumba, ki premakne preprogo v naslednji korak.
   String? get nextActionLabel => switch (this) {
         RugStatus.awaitingPickup => 'Prevzeto pri stranki',
-        RugStatus.awaitingWash => 'Oprano → sušenje',
+        RugStatus.awaitingWash => 'Oprano → v sušenje',
         RugStatus.drying => 'Suho → vnesi mere',
-        RugStatus.finishing => 'Končna obdelava in cena',
+        RugStatus.finishing => 'Vnesi mere in ceno',
         RugStatus.ready => null,
         RugStatus.returned => null,
       };
@@ -89,6 +91,17 @@ extension RugStatusX on RugStatus {
         RugStatus.finishing => 3,
         RugStatus.ready => 4,
         RugStatus.returned => 5,
+      };
+
+  /// Kako se reče kosu, ki je ta korak *že opravil* — za napredek na kartici
+  /// naročila ("3/8 oprano"). Ni isto kot `label`, ki opisuje trenutno stanje.
+  String get doneLabel => switch (this) {
+        RugStatus.awaitingPickup => 'prevzeto',
+        RugStatus.awaitingWash => 'oprano',
+        RugStatus.drying => 'posušeno',
+        RugStatus.finishing => 'izmerjeno',
+        RugStatus.ready => 'pripravljeno',
+        RugStatus.returned => 'vrnjeno',
       };
 }
 

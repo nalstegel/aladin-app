@@ -83,7 +83,7 @@ class AppState {
     return list;
   }
 
-  /// Koliko kosov naročila je že READY (ali vrnjenih).
+  /// Koliko kosov naročila je že pripravljenih (ali vrnjenih).
   int readyCount(String orderId) => itemsOf(orderId)
       .where((i) => i.status == RugStatus.ready || i.status == RugStatus.returned)
       .length;

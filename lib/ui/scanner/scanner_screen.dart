@@ -2,33 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../core/scan.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../rugs/rug_detail_screen.dart';
+import '../widgets/common.dart';
+import 'scan_capture_screen.dart';
+import 'work_list_screen.dart';
 
-/// Skeniranje QR etikete. Vsaka koda vodi na točno določen kos.
+/// Zavihek Skeniraj: živa kamera in bližnjice do delovnih seznamov.
 ///
-/// Hitri način je namenjen delu ob stroju: skeniraš kos za kosom in vsak
-/// se premakne za korak naprej, brez odpiranja zaslonov.
+/// Hitri način je namenjen delu ob stroju — skeniraš kos za kosom in vsak se
+/// premakne za korak naprej, brez odpiranja zaslonov.
 class ScannerScreen extends ConsumerStatefulWidget {
-  const ScannerScreen({super.key, this.onResult, this.title});
+  const ScannerScreen({super.key, this.active = true});
 
-  /// Če je podan, skener vrne prebrani ID namesto odpiranja podrobnosti.
-  /// Uporablja ga postopek vračila.
-  final void Function(String itemId)? onResult;
-  final String? title;
+  /// Kamera teče samo, kadar je zavihek res izbran. Brez tega bi tekla ves
+  /// čas, ko je aplikacija odprta, in praznila baterijo.
+  final bool active;
 
   @override
   ConsumerState<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends ConsumerState<ScannerScreen> {
-  final _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.normal,
-    formats: const [BarcodeFormat.qrCode],
-  );
+/// Bližnjice pod okvirjem — koraki, ki jih delavec dejansko dela ob stroju.
+/// "Mere in cena" (finishing) je namenoma zunaj: do njega se pride prek
+/// filtra v Naročilih in prek ploščice na Danes.
+const _shortcuts = [
+  RugStatus.awaitingPickup,
+  RugStatus.awaitingWash,
+  RugStatus.drying,
+  RugStatus.ready,
+  RugStatus.returned,
+];
 
+class _ScannerScreenState extends ConsumerState<ScannerScreen> {
+  MobileScannerController? _controller;
   bool _quickMode = false;
   String? _lastCode;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -36,40 +46,63 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   Color _flashColor = AppColors.ready;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.active) _start();
+  }
+
+  @override
+  void didUpdateWidget(ScannerScreen old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active) _start();
+    if (!widget.active && old.active) _stop();
+  }
+
+  @override
   void dispose() {
-    _controller.dispose();
+    // Namenoma brez _stop(): ta kliče setState, kar med dispose vrže napako.
+    _controller?.dispose();
+    _controller = null;
     super.dispose();
   }
 
-  /// Sprejmemo golo oznako ("1847-2") ali povezavo ("aladin://rug/1847-2").
-  String _normalize(String raw) {
-    final trimmed = raw.trim();
-    final slash = trimmed.lastIndexOf('/');
-    final code = slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
-    return code.toUpperCase().replaceAll(RegExp(r'[^0-9\-]'), '');
+  void _start() {
+    if (_controller != null) return;
+    setState(() {
+      _controller = MobileScannerController(
+        detectionSpeed: DetectionSpeed.normal,
+        formats: const [BarcodeFormat.qrCode],
+      );
+    });
+  }
+
+  void _stop() {
+    if (_controller == null) return;
+    _controller!.dispose();
+    setState(() => _controller = null);
   }
 
   void _onDetect(BarcodeCapture capture) {
     final raw = capture.barcodes.firstOrNull?.rawValue;
     if (raw == null) return;
-    final code = _normalize(raw);
+    final code = normalizeScanCode(raw);
     if (code.isEmpty) return;
 
+    // Kamera isto kodo prebere večkrat na sekundo.
     final now = DateTime.now();
     if (code == _lastCode && now.difference(_lastAt).inSeconds < 3) return;
     _lastCode = code;
     _lastAt = now;
 
+    _handle(code);
+  }
+
+  void _handle(String code) {
     final state = ref.read(repositoryProvider);
     final item = state.item(code);
 
     if (item == null) {
       _showFlash('Kos $code ni v sistemu', AppColors.danger);
-      return;
-    }
-
-    if (widget.onResult != null) {
-      widget.onResult!(item.id);
       return;
     }
 
@@ -106,142 +139,240 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(widget.title ?? 'Skeniraj etiketo'),
-        titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
+  /// Ročni vnos je zasilni izhod, kadar je etiketa strgana ali umazana.
+  Future<void> _manualEntry() async {
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ročni vnos kode'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Vpiši oznako s etikete, npr. 1847-2.',
+              style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.visiblePassword,
+              decoration: const InputDecoration(hintText: '1847-2'),
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+          ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.flashlight_on_outlined),
-            onPressed: () => _controller.toggleTorch(),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Prekliči'),
           ),
-          IconButton(
-            icon: const Icon(Icons.cameraswitch_outlined),
-            onPressed: () => _controller.switchCamera(),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Odpri'),
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          MobileScanner(controller: _controller, onDetect: _onDetect),
-          _frame(),
-          if (_flash != null)
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 16,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _flashColor,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle,
-                        color: Colors.white, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _flash!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
+    );
+    controller.dispose();
+
+    if (code == null) return;
+    final normalized = normalizeScanCode(code);
+    if (normalized.isEmpty) return;
+    if (!mounted) return;
+    _handle(normalized);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = ref.watch(productionCountsProvider);
+
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            const Center(
+              child: Text(
+                'Skeniraj',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.text,
                 ),
               ),
             ),
-          if (widget.onResult == null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 24,
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        children: [
-                          _modeButton('Odpri kos', !_quickMode,
-                              () => setState(() => _quickMode = false)),
-                          _modeButton('Hitri način', _quickMode,
-                              () => setState(() => _quickMode = true)),
-                        ],
+            const SizedBox(height: 4),
+            const Center(
+              child: Text(
+                'Skeniraj kodo na etiketi preproge',
+                style: TextStyle(fontSize: 14, color: AppColors.textMuted),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _viewfinder(),
+            const SizedBox(height: 14),
+            _quickModeToggle(),
+            const SizedBox(height: 14),
+            MenuGroup(
+              rows: [
+                for (final s in _shortcuts)
+                  MenuRow(
+                    icon: AppIcons.forRug(s),
+                    iconColor: AppColors.forRug(s),
+                    label: s.label,
+                    trailing: _count(counts[s] ?? 0, AppColors.forRug(s)),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WorkListScreen(status: s),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _quickMode
-                          ? 'Vsak skeniran kos gre samodejno korak naprej.'
-                          : 'Skeniranje odpre podrobnosti preproge.',
-                      textAlign: TextAlign.center,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: _manualEntry,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('Ročni vnos kode'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _count(int n, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          '$n',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: color,
+          ),
+        ),
+      );
+
+  Widget _viewfinder() {
+    return AspectRatio(
+      aspectRatio: 1.15,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_controller != null)
+                MobileScanner(controller: _controller!, onDetect: _onDetect)
+              else
+                const ColoredBox(color: AppColors.surface),
+              const ScanFrameOverlay(color: Colors.white),
+              if (_flash != null)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  top: 12,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _flashColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _flash!,
                       style: const TextStyle(
-                        color: Colors.white70,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
                         fontSize: 13,
                       ),
                     ),
+                  ),
+                ),
+              Positioned(
+                right: 10,
+                bottom: 10,
+                child: Row(
+                  children: [
+                    _camAction(Icons.flashlight_on_outlined,
+                        () => _controller?.toggleTorch()),
+                    const SizedBox(width: 8),
+                    _camAction(Icons.cameraswitch_outlined,
+                        () => _controller?.switchCamera()),
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _camAction(IconData icon, VoidCallback onTap) => Material(
+        color: Colors.black.withValues(alpha: 0.45),
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
+        ),
+      );
+
+  Widget _quickModeToggle() {
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        children: [
+          Icon(
+            _quickMode ? Icons.bolt : Icons.bolt_outlined,
+            size: 20,
+            color: _quickMode ? AppColors.primary : AppColors.textMuted,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Hitri način',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  _quickMode
+                      ? 'Vsak skeniran kos gre korak naprej.'
+                      : 'Skeniranje odpre podrobnosti kosa.',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
             ),
+          ),
+          Switch(
+            value: _quickMode,
+            onChanged: (v) => setState(() => _quickMode = v),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _modeButton(String label, bool selected, VoidCallback onTap) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected ? Colors.black : Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _frame() {
-    return IgnorePointer(
-      child: Center(
-        child: Container(
-          width: 240,
-          height: 240,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white70, width: 3),
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
       ),
     );
   }

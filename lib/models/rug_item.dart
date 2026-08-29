@@ -65,6 +65,9 @@ class RugItem {
   String get label => 'KOS $index/$ofTotal';
   String get orderNumber => id.split('-').first;
 
+  /// Kdaj se je kos nazadnje premaknil — za delovne sezname ob stroju.
+  DateTime? get lastChangeAt => history.isEmpty ? null : history.last.at;
+
   bool get isMeasured => m2 > 0 && rugTypeId != null;
 
   /// Površina v m². Nepravilne oblike imajo ročni vnos.

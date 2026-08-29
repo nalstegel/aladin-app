@@ -140,7 +140,7 @@ class CustomerDetailScreen extends ConsumerWidget {
             )
           else
             for (final o in open) ...[
-              OrderCard(o, showChannel: true),
+              OrderCard(o),
               const SizedBox(height: 8),
             ],
           SectionHeader('Zgodovina (${past.length})'),
@@ -154,7 +154,7 @@ class CustomerDetailScreen extends ConsumerWidget {
             )
           else
             for (final o in past) ...[
-              OrderCard(o, showChannel: true),
+              OrderCard(o),
               const SizedBox(height: 8),
             ],
         ],

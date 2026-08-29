@@ -2,57 +2,49 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
+import '../data/navigation.dart';
 import 'customers/customers_screen.dart';
 import 'dashboard/dashboard_screen.dart';
+import 'more/more_screen.dart';
 import 'orders/orders_screen.dart';
 import 'scanner/scanner_screen.dart';
-import 'settings/settings_screen.dart';
 
 /// Ogrodje z ročno izdelano spodnjo vrstico — sredinski gumb je skener,
 /// ker je to dejanje, ki se v obratu ponovi največkrat.
-class AppShell extends ConsumerStatefulWidget {
+///
+/// Kamera skenerja teče samo, kadar je njegov zavihek izbran (glej `active`),
+/// sicer bi praznila baterijo ves čas, ko je aplikacija odprta.
+class AppShell extends ConsumerWidget {
   const AppShell({super.key});
 
   @override
-  ConsumerState<AppShell> createState() => _AppShellState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final index = ref.watch(shellTabProvider);
 
-class _AppShellState extends ConsumerState<AppShell> {
-  int _index = 0;
-
-  static const _pages = [
-    DashboardScreen(),
-    OrdersScreen(),
-    CustomersScreen(),
-    SettingsScreen(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _index, children: _pages),
+      body: IndexedStack(
+        index: index,
+        children: [
+          const DashboardScreen(),
+          const OrdersScreen(),
+          ScannerScreen(active: index == shellTabScanner),
+          const CustomersScreen(),
+          const MoreScreen(),
+        ],
+      ),
       bottomNavigationBar: _BottomBar(
-        index: _index,
-        onSelect: (i) => setState(() => _index = i),
-        onScan: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ScannerScreen()),
-        ),
+        index: index,
+        onSelect: (i) => ref.read(shellTabProvider.notifier).state = i,
       ),
     );
   }
 }
 
 class _BottomBar extends StatelessWidget {
-  const _BottomBar({
-    required this.index,
-    required this.onSelect,
-    required this.onScan,
-  });
+  const _BottomBar({required this.index, required this.onSelect});
 
   final int index;
   final ValueChanged<int> onSelect;
-  final VoidCallback onScan;
 
   @override
   Widget build(BuildContext context) {
@@ -84,13 +76,13 @@ class _BottomBar extends StatelessWidget {
               Expanded(
                 child: Center(
                   child: GestureDetector(
-                    onTap: onScan,
+                    onTap: () => onSelect(shellTabScanner),
                     child: Container(
                       width: 58,
                       height: 58,
                       decoration: BoxDecoration(
                         color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
+                        shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
                             color: AppColors.primary.withValues(alpha: 0.35),
@@ -112,15 +104,15 @@ class _BottomBar extends StatelessWidget {
                 icon: Icons.people_alt_outlined,
                 activeIcon: Icons.people_alt,
                 label: 'Stranke',
-                selected: index == 2,
-                onTap: () => onSelect(2),
-              ),
-              _Item(
-                icon: Icons.settings_outlined,
-                activeIcon: Icons.settings,
-                label: 'Več',
                 selected: index == 3,
                 onTap: () => onSelect(3),
+              ),
+              _Item(
+                icon: Icons.more_horiz,
+                activeIcon: Icons.more_horiz,
+                label: 'Več',
+                selected: index == 4,
+                onTap: () => onSelect(4),
               ),
             ],
           ),

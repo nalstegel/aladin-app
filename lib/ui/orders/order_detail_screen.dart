@@ -174,7 +174,7 @@ class OrderDetailScreen extends ConsumerWidget {
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 14),
-          ReadyProgress(ready: ready, total: total),
+          PlainProgressBar(done: ready, total: total, label: 'pripravljeno'),
         ],
       ),
     );
@@ -333,7 +333,7 @@ class OrderDetailScreen extends ConsumerWidget {
           child: FilledButton.icon(
             onPressed: null,
             icon: const Icon(Icons.hourglass_bottom),
-            label: Text('$ready/$total READY'),
+            label: Text('$ready/$total pripravljeno'),
           ),
         ),
       ],

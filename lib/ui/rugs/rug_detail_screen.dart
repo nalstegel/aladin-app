@@ -42,6 +42,7 @@ class RugDetailScreen extends ConsumerWidget {
         children: [
           AppCard(
             padding: const EdgeInsets.all(18),
+            accent: color,
             borderColor: color.withValues(alpha: 0.5),
             child: Column(
               children: [
@@ -101,7 +102,7 @@ class RugDetailScreen extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          '${state.readyCount(order.id)}/${order.itemCount} READY · ${order.status.label}',
+                          '${state.readyCount(order.id)}/${order.itemCount} pripravljeno · ${order.status.label}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textMuted,
@@ -335,7 +336,7 @@ class RugDetailScreen extends ConsumerWidget {
         primary = FilledButton.icon(
           onPressed: () => FinishSheet.show(context, item),
           icon: const Icon(Icons.euro),
-          label: const Text('Končna obdelava in cena'),
+          label: const Text('Vnesi mere in ceno'),
         );
       case RugStatus.ready:
       case RugStatus.returned:

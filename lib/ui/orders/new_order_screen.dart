@@ -15,10 +15,12 @@ import 'labels_screen.dart';
 class NewOrderScreen extends ConsumerStatefulWidget {
   const NewOrderScreen({
     super.key,
-    required this.initialChannel,
+    this.initialChannel = OrderChannel.dropoff,
     this.presetCustomer,
   });
 
+  /// Kanal ni več zavihek, zato ga obrazec le predlaga — najpogostejši je
+  /// osebni prevzem, delavec pa ga tu tudi spremeni.
   final OrderChannel initialChannel;
   final Customer? presetCustomer;
 

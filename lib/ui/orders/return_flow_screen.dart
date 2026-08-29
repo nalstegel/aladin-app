@@ -5,7 +5,7 @@ import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../../models/return_proof.dart';
-import '../scanner/scanner_screen.dart';
+import '../scanner/scan_capture_screen.dart';
 import '../widgets/common.dart';
 import 'signature_screen.dart';
 
@@ -68,10 +68,9 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ReadyProgress(
-                  ready: _scanned.length,
+                PlainProgressBar(
+                  done: _scanned.length,
                   total: items.length,
-                  showLabel: false,
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -195,7 +194,7 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ScannerScreen(
+        builder: (context) => ScanCaptureScreen(
           title: 'Skeniraj kose za vračilo',
           onResult: (id) {
             if (!valid.contains(id)) {

@@ -30,7 +30,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Kanal, na katerega Cloud Functions pošiljajo obvestila
+             (functions/index.js). Brez tega bi Android obvestila, ki pridejo
+             ob zaprti aplikaciji, tiho zavrgel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="aladin" />
     </application>
+    <!-- Od Androida 13 naprej je za obvestila potrebno dovoljenje; zanj
+         vpraša PushService ob vklopu v Nastavitvah. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
