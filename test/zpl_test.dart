@@ -23,7 +23,7 @@ void main() {
         itemId: 'LJ-001-2',
       );
 
-      expect(zpl, contains('^BQN,2,5'));
+      expect(zpl, contains('^BQN,2,8'));
       expect(zpl, contains('^FDLA,LJ-001-2^FS'));
       expect(zpl, contains('^FDLJ-001-2^FS'));
       expect(zpl, contains('^FDLJ-001^FS'));
@@ -37,7 +37,7 @@ void main() {
         itemId: 'LJ-001-3',
       );
 
-      expect(zpl, isNot(contains('^FO240,112')));
+      expect(zpl, isNot(contains('^FO16,314')));
     });
 
     test('strips ZPL control characters out of order/customer data', () {

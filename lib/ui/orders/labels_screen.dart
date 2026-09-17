@@ -107,17 +107,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               ),
             ),
           const SectionHeader('Predogled'),
-          ListView.separated(
+          GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, i) => AspectRatio(
-              // Nalepka je 60×40mm — širša kot visoka, zato predogled sledi
-              // isti postavitvi (QR levo, besedilo desno) kot pravi izpis.
-              aspectRatio: 1.5,
-              child: _LabelPreview(order: order, item: items[i]),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              // Nalepka je pokončna, 40×60mm.
+              childAspectRatio: 40 / 60,
             ),
+            itemCount: items.length,
+            itemBuilder: (_, i) => _LabelPreview(order: order, item: items[i]),
           ),
         ],
       ),
@@ -184,9 +185,9 @@ class _LabelPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      // Postavitev sledi pravi nalepki: QR levo, besedilo desno, da izkoristi
-      // daljšo (60mm) stranico namesto da bi vse skladala navpično.
-      child: Row(
+      // Postavitev sledi pravi nalepki: QR na vrhu (na sredini), besedilo
+      // pod njo — nalepka je pokončna (40×60mm), ne ležeča.
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           AspectRatio(
@@ -196,53 +197,37 @@ class _LabelPreview extends StatelessWidget {
               padding: EdgeInsets.zero,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  order.number,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  order.customerName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (item.isMeasured) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    Fmt.dimensions(item.widthCm, item.lengthCm),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  item.id,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 10),
+          Text(
+            order.number,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            order.customerName,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          if (item.isMeasured) ...[
+            const SizedBox(height: 4),
+            Text(
+              Fmt.dimensions(item.widthCm, item.lengthCm),
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            item.id,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1,
             ),
           ),
         ],
