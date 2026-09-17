@@ -20,6 +20,7 @@ void main() {
     final customer = repo.state.customers.first;
     final order = repo.createOrder(
       customer: customer,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 3,
@@ -61,6 +62,7 @@ void main() {
     final customer = repo.state.customers.first;
     final order = repo.createOrder(
       customer: customer,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.delivery,
       handover: HandoverMode.weDeliver,
       itemCount: 1,
@@ -85,6 +87,7 @@ void main() {
   test('minimalni obračun dvigne ceno majhne preproge', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,
@@ -105,6 +108,7 @@ void main() {
   test('doplačila in popust se pravilno seštejejo', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,
@@ -133,6 +137,7 @@ void main() {
   test('vračilo shrani dokazilo in zaključi naročilo', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 2,
@@ -170,6 +175,7 @@ void main() {
   test('ponovno pranje razveljavi potrjeno ceno', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,

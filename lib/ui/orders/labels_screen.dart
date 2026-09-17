@@ -1,46 +1,78 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../core/zpl.dart';
 import '../../data/providers.dart';
+import '../../data/zebra_printer.dart';
 import '../../models/order.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
 import 'order_detail_screen.dart';
 
-/// Etikete za posamezne kose. QR vsebuje ID kosa, npr. "1847-2",
+/// Etikete za posamezne kose. QR vsebuje ID kosa, npr. "LJ-001-2",
 /// zato skeniranje vedno odpre točno to preprogo.
-class LabelsScreen extends ConsumerWidget {
+class LabelsScreen extends ConsumerStatefulWidget {
   const LabelsScreen({super.key, required this.orderId, this.isNew = false});
 
   final String orderId;
   final bool isNew;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LabelsScreen> createState() => _LabelsScreenState();
+}
+
+class _LabelsScreenState extends ConsumerState<LabelsScreen> {
+  bool _printing = false;
+
+  Future<void> _print(WorkOrder order, List<RugItem> items) async {
+    setState(() => _printing = true);
+    try {
+      final zpl = items
+          .map((item) => buildLabelZpl(
+                orderId: order.number,
+                customerName: order.customerName,
+                dimensions: Fmt.dimensions(item.widthCm, item.lengthCm),
+                itemId: item.id,
+              ))
+          .join();
+      await ref.read(zebraPrinterServiceProvider).print(zpl);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${items.length} etiket poslanih na tiskalnik.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tiskanje ni uspelo: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
-    final order = state.order(orderId);
+    final order = state.order(widget.orderId);
     if (order == null) {
       return const Scaffold(body: Center(child: Text('Naročilo ne obstaja')));
     }
-    final items = state.itemsOf(orderId);
+    final items = state.itemsOf(widget.orderId);
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Etikete ${order.number}'),
-        automaticallyImplyLeading: !isNew,
+        automaticallyImplyLeading: !widget.isNew,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
         children: [
-          if (isNew)
+          if (widget.isNew)
             AppCard(
               borderColor: AppColors.ready.withValues(alpha: 0.5),
               child: Row(
@@ -73,17 +105,17 @@ class LabelsScreen extends ConsumerWidget {
               ),
             ),
           const SectionHeader('Predogled'),
-          GridView.builder(
+          ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 0.82,
-            ),
             itemCount: items.length,
-            itemBuilder: (_, i) => _LabelPreview(order: order, item: items[i]),
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, i) => AspectRatio(
+              // Nalepka je 60×40mm — širša kot visoka, zato predogled sledi
+              // isti postavitvi (QR levo, besedilo desno) kot pravi izpis.
+              aspectRatio: 1.5,
+              child: _LabelPreview(order: order, item: items[i]),
+            ),
           ),
         ],
       ),
@@ -97,26 +129,33 @@ class LabelsScreen extends ConsumerWidget {
           top: false,
           child: Row(
             children: [
-              if (isNew)
+              if (widget.isNew)
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => OrderDetailScreen(orderId: orderId),
+                        builder: (_) =>
+                            OrderDetailScreen(orderId: widget.orderId),
                       ),
                     ),
                     child: const Text('Odpri naročilo'),
                   ),
                 ),
-              if (isNew) const SizedBox(width: 10),
+              if (widget.isNew) const SizedBox(width: 10),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: () => Printing.layoutPdf(
-                    onLayout: (format) => _buildPdf(order, items, format),
-                    name: 'Etikete-${order.id}',
-                  ),
-                  icon: const Icon(Icons.print),
+                  onPressed: _printing ? null : () => _print(order, items),
+                  icon: _printing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.print),
                   label: const Text('Natisni'),
                 ),
               ),
@@ -143,168 +182,67 @@ class _LabelPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      // Postavitev sledi pravi nalepki: QR levo, besedilo desno, da izkoristi
+      // daljšo (60mm) stranico namesto da bi vse skladala navpično.
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            order.customerName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+          AspectRatio(
+            aspectRatio: 1,
+            child: QrImageView(
+              data: item.id,
+              padding: EdgeInsets.zero,
+            ),
           ),
-          Row(
-            children: [
-              Text(
-                order.number,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textMuted,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'KOS ${item.index}/${item.ofTotal}',
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  order.number,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 10,
-                    color: Colors.white,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: Center(
-              child: QrImageView(
-                data: item.id,
-                size: 96,
-                padding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Center(
-            child: Text(
-              item.id,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-          Center(
-            child: Text(
-              Fmt.date(order.createdAt),
-              style: const TextStyle(
-                fontSize: 9,
-                color: AppColors.textMuted,
-              ),
+                const SizedBox(height: 4),
+                Text(
+                  order.customerName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  Fmt.dimensions(item.widthCm, item.lengthCm),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.id,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
-
-/// A4 pola z mrežo etiket 3 × 6. Vsaka etiketa je samostojna, da jo lahko
-/// izrežeš in pripneš na preprogo.
-Future<Uint8List> _buildPdf(
-  WorkOrder order,
-  List<RugItem> items,
-  PdfPageFormat format,
-) async {
-  final doc = pw.Document();
-
-  pw.Widget label(RugItem item) => pw.Container(
-        margin: const pw.EdgeInsets.all(4),
-        padding: const pw.EdgeInsets.all(6),
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(width: 0.6, color: PdfColors.grey400),
-          borderRadius: pw.BorderRadius.circular(4),
-        ),
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              order.customerName,
-              maxLines: 1,
-              style: pw.TextStyle(
-                fontSize: 9,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text(order.number, style: const pw.TextStyle(fontSize: 8)),
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(
-                    horizontal: 3,
-                    vertical: 1,
-                  ),
-                  color: PdfColors.black,
-                  child: pw.Text(
-                    'KOS ${item.index}/${item.ofTotal}',
-                    style: pw.TextStyle(
-                      fontSize: 7,
-                      color: PdfColors.white,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 4),
-            pw.Expanded(
-              child: pw.Center(
-                child: pw.BarcodeWidget(
-                  barcode: pw.Barcode.qrCode(),
-                  data: item.id,
-                  width: 62,
-                  height: 62,
-                  drawText: false,
-                ),
-              ),
-            ),
-            pw.Center(
-              child: pw.Text(
-                item.id,
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  const perPage = 18;
-  for (var start = 0; start < items.length; start += perPage) {
-    final chunk = items.skip(start).take(perPage).toList();
-    doc.addPage(
-      pw.Page(
-        pageFormat: format,
-        margin: const pw.EdgeInsets.all(12),
-        build: (context) => pw.GridView(
-          crossAxisCount: 3,
-          childAspectRatio: 0.78,
-          children: chunk.map(label).toList(),
-        ),
-      ),
-    );
-  }
-
-  return doc.save();
 }

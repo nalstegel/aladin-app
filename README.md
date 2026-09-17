@@ -13,7 +13,7 @@ skozi proizvodnjo.** Status naročila se nikoli ne nastavlja ročno — aplikaci
 ga vedno izračuna iz stanja posameznih kosov.
 
 ```
-NAROČILO                          POSAMEZNA PREPROGA (#1847-2)
+NAROČILO                          POSAMEZNA PREPROGA (LJ-001-2)
 ────────                          ────────────────────────────
 Za prevzem        ──────────────  Za prevzem
         │                                 │  skeniraj / "Prevzeto"
@@ -97,12 +97,19 @@ Naročila so v enem seznamu z zavihkoma *Aktivna* in *Zaključena*; kanal
 (dostava / pripeljano / B2B) je oznaka na kartici in filter v glavi, ne več
 ločen zavihek.
 
+## Naročila in ID-ji
+
+Vsako naročilo dobi zaporedno številko glede na poslovalnico, ki jo delavec
+izbere ob sprejemu: **LJ-001, LJ-002, … LJ-999, LJ1-001, LJ1-002, …** za
+Ljubljano, enako z **MB** za Maribor (glej `lib/core/order_id.dart`).
+
 ## QR etikete
 
-QR koda vsebuje ID kosa, npr. `1847-2`. Skeniranje vedno odpre točno tisto
-preprogo, ne celotnega naročila. Etikete se tiskajo kot A4 pola z mrežo 3 × 6
-(**Naročilo → ikona QR → Natisni**); na etiketi so ime stranke, številka
-naročila, `KOS 2/3` in koda.
+QR koda vsebuje ID kosa, npr. `LJ-001-2` (številka naročila + zaporedna
+številka kosa). Skeniranje vedno odpre točno tisto preprogo, ne celotnega
+naročila. Etikete se tiskajo neposredno na termalni tiskalnik Zebra ZD230 na
+omrežju (**Naročilo → ikona QR → Natisni**); na etiketi so številka
+naročila, ime stranke, mere preproge in QR koda.
 
 Skeniranje odpre podrobnosti preproge. Za delo ob stroju je **hitri način**:
 vsak skeniran kos gre samodejno korak naprej, brez dotikanja zaslona.

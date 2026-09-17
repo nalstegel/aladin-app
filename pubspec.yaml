@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.13.1
@@ -44,8 +44,6 @@ dependencies:
   shared_preferences: ^2.5.5
   intl: ^0.20.3
   uuid: ^4.6.0
-  pdf: ^3.13.0
-  printing: ^5.15.0
   firebase_core: ^4.14.0
   cloud_firestore: ^6.9.0
   firebase_storage: ^13.5.0
@@ -65,6 +63,27 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.8
+
+# Ikona aplikacije. Izvorna slika (assets/branding/icon.png) je bela,
+# neprosojna verzija logotipa — App Store zavrne 1024×1024 ikono s prosojnostjo.
+# Poganjaj z: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/icon.png
+
+# Zagonski zaslon. Ista slika kot na Danes v ozadju barve, ki jo aplikacija
+# sicer uporablja za `Scaffold` (AppColors.surface v core/theme.dart) — zato
+# prehod iz zagonskega zaslona v aplikacijo ni opazen.
+# Poganjaj z: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#F6F7F9"
+  image: assets/branding/splash.png
+  android_12:
+    color: "#F6F7F9"
+    image: assets/branding/splash.png
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

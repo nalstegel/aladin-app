@@ -28,8 +28,11 @@ are. If any future requirement seems ambiguous, re-read Section 6 first.
 An **order** (`WorkOrder`) is a bundle of one or more **rug items**
 (`RugItem`). Each rug item:
 
-- has its own ID like `1847-2` (order number `1847`, piece 2) — this exact
-  string is also the QR code payload printed on its label
+- has its own ID like `LJ-001-2` (order id `LJ-001`, piece 2) — this exact
+  string is also the QR code payload printed on its label. Order ids are
+  per-location sequences (`LJ-`/`MB-` + zero-padded counter, see
+  `lib/core/order_id.dart` and §4.7) chosen when the order is created and
+  never changed afterward.
 - moves through its own status independently:
   `awaitingPickup → awaitingWash → drying → finishing → ready → returned`
 - **an order's status is NEVER set directly.** It is always *derived* from
@@ -55,9 +58,13 @@ directly.
 - **mobile_scanner** for QR scanning (MLKit-backed, works well on both
   platforms).
 - **signature** package for the finger-signature capture on return.
-- **pdf** + **printing** packages for generating/printing the A4 sheet of QR
-  labels (3×6 grid per page).
 - **qr_flutter** for on-screen QR previews.
+- Rug labels print directly to a **Zebra ZD230** thermal printer on the shop
+  LAN: `lib/core/zpl.dart` builds raw ZPL, `lib/data/zebra_printer.dart` sends
+  it over a plain TCP socket to port 9100 (no vendor SDK/plugin needed, same
+  code on Android/iOS). Printer IP is a per-device setting (Nastavitve →
+  Tiskalnik). Replaced the earlier A4 PDF/AirPrint flow (`pdf` + `printing`
+  packages, now removed) — see 4.6.
 - **Firebase (Firestore + Storage)** is the live backend as of 2026-08-26
   (`lib/data/store.dart` → `FirestoreStore`). `LocalStore` (JSON on device)
   still exists in the same file but is no longer wired up. See Section 4.1
@@ -146,7 +153,7 @@ items back at return time, and signing.
   (channel + customer search/create + item count + dates + handover mode),
   `order_detail_screen.dart` (full order view, per-item rows, totals,
   return-proof display), `labels_screen.dart` (QR label grid preview +
-  A4 PDF print via `printing` package), `return_flow_screen.dart` (the
+  print to Zebra ZD230 via raw ZPL/TCP), `return_flow_screen.dart` (the
   fail-safe: must scan every item before "POTRDI VRAČILO" appears),
   `signature_screen.dart` (finger signature + statement text + receiver
   name).
@@ -523,6 +530,97 @@ preklop na Blaze, `firebase deploy --only functions`. Na iOS so blokirana
 - Admin UI polish for catalog/employee management is minimal but
   functional; could be expanded if the owner wants more control without
   code changes.
+
+### 4.6 — Zebra ZD230 label printing — DONE in code, UNVERIFIED on real hardware (2026-09-17)
+Replaced the A4 PDF label sheet with direct thermal printing on a Zebra
+ZD230 that lives on the shop's LAN. Implementation:
+- `lib/core/zpl.dart` — pure ZPL template builder (`buildLabelZpl`), no I/O,
+  easy to unit-test. Label is 60×40mm at 203dpi (`labelWidthDots` = 480,
+  `labelHeightDots` = 320 — the only resolution the ZD230 comes in).
+  Layout is horizontal — QR on the left (magnification 8, sized up from the
+  initial draft so it scans reliably on the shop floor), order id/customer
+  name/dimensions/item id stacked to its right (`^FB` word-wraps the
+  customer name to 2 lines since it now has less horizontal room) — this
+  uses the label's longer 60mm side productively instead of stacking
+  everything top-to-bottom in a narrow left column. Prints: order id,
+  customer name, carpet dimensions (`Fmt.dimensions`, blank until the rug is
+  measured), the QR code, and the item id as small plain text (needed for
+  the existing manual-entry fallback in `scanner_screen.dart` when a QR
+  won't scan — without printed text there's nothing to type in).
+  Deliberately does **not** print a per-piece "KOS x/y" marker or a date,
+  per the exact field list requested; worth reconsidering if two rugs in
+  the same multi-item order ever need to be told apart by eye without
+  scanning.
+- `lib/data/zebra_printer.dart` — `ZebraPrinterService` opens a raw TCP
+  socket to `zebraPrinterIp:9100` (the "raw" printing port every Zebra
+  Link-OS printer listens on) and writes the ZPL bytes. No vendor SDK, no
+  platform-specific plugin — this is why it works identically on Android
+  and iOS.
+- The printer IP is **hardcoded** as the `zebraPrinterIp` constant in
+  `zebra_printer.dart` (owner's explicit choice — it's a fixed/static IP
+  set in the router, and they didn't want a settings screen for it). If the
+  printer ever moves to a different address, that one constant is the only
+  place to change.
+- `labels_screen.dart`'s "Natisni" button sends ZPL for every item in the
+  order in one socket connection instead of opening the OS print dialog;
+  the on-screen "Predogled" grid was updated to match exactly what prints.
+  The `pdf`/`printing` packages and the old A4-grid PDF builder were
+  removed since nothing else used them.
+
+**Not yet verified — check before trusting this in production:**
+- `zebraPrinterIp` is set to `192.168.1.138` (the printer's real static IP,
+  confirmed by the owner on 2026-09-17) — not yet print-tested against it.
+- Slovenian diacritics (č š ž) rely on `^CI28` (UTF-8) being honored by the
+  built-in ZD230 font — print a real label with a name containing them and
+  confirm before relying on it; if it renders wrong, the fix is a different
+  `^A` font or a Zebra bitmap font with the right code page.
+- No physical ZD230 has been used to test this yet — verify a full-order
+  print (multiple items back to back) doesn't drop labels or need a delay
+  between sockets, and that the 60×40mm layout in `zpl.dart` actually fits
+  the media loaded in the printer.
+
+### 4.7 — Per-location order numbering (LJ-.../MB-...) — DONE, UNVERIFIED on real hardware (2026-09-17)
+Orders are no longer numbered with a single global counter (`#1847` style).
+Each order is now created under a **poslovalnica** (location) the employee
+picks in "Novo naročilo" — Ljubljana or Maribor — and gets a sequential id
+scoped to that location:
+- `lib/models/enums.dart` — `OrderLocation` enum (`ljubljana`/`maribor`)
+  with `.code` ("LJ"/"MB").
+- `lib/core/order_id.dart` — `buildOrderId(location, n)`, pure and unit
+  tested indirectly via `zpl_test.dart`'s fixtures. Sequence: `LJ-001` …
+  `LJ-999`, then `LJ1-001` … `LJ1-999`, then `LJ2-001` … — the cycle digit
+  is appended directly after the location code and only appears once the
+  3-digit counter has wrapped at least once. `n` never resets.
+- `AppState.nextOrderSeqLjubljana`/`nextOrderSeqMaribor` replace the old
+  single `nextOrderNumber` counter; `Repository.createOrder` now requires
+  `location:` and computes the id from the right counter.
+- `WorkOrder.id` **is** the formatted order id (e.g. `LJ-001`); `.number`
+  is just `id` now (dropped the old `#` prefix). Item ids are still
+  `<orderId>-<index>` (e.g. `LJ-001-2`), so the QR/scan path didn't need to
+  change shape — but `RugItem.orderNumber` used to parse it back out with
+  `id.split('-').first`, which broke the moment the order id itself gained
+  a hyphen; fixed to just return the `orderId` field it already had.
+  `core/scan.dart`'s normalizer also had to start allowing A–Z (it
+  previously stripped everything but digits and `-`).
+- Firestore: the `meta/counters` document now stores
+  `nextOrderSeqLjubljana`/`nextOrderSeqMaribor` instead of
+  `nextOrderNumber`. Old documents/local saves without these fields default
+  both counters to 1 — this does **not** migrate whatever count a shop was
+  already at under the old scheme, it just starts the new scheme fresh.
+- Seed demo data (`lib/data/seed.dart`) was renumbered to `LJ-001`…`LJ-006`,
+  all under Ljubljana, counters seeded at 7/1.
+
+**Not yet verified:**
+- No real multi-employee/multi-phone test of two people creating orders in
+  the same location at the same moment — the counter write in
+  `store.dart` is a plain doc read + batched set, not a Firestore
+  transaction, so it inherits whatever race-condition exposure the
+  original single-counter version already had (out of scope for this
+  change; flagging so it isn't assumed fixed).
+- References to the old `#1847`-style numbering elsewhere in this file
+  (§3 "Verified working", the original spec in §6) describe **past**
+  manual test sessions that genuinely used that numbering at the time —
+  left as accurate history, not updated to the new scheme.
 
 ## 5. How to resume work in a fresh session
 

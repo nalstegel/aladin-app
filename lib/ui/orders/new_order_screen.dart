@@ -29,6 +29,7 @@ class NewOrderScreen extends ConsumerStatefulWidget {
 }
 
 class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
+  OrderLocation _location = OrderLocation.ljubljana;
   late OrderChannel _channel = widget.initialChannel;
   late HandoverMode _handover = _defaultHandover(widget.initialChannel);
   Customer? _customer;
@@ -65,6 +66,15 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
+          const SectionHeader('Poslovalnica'),
+          SegmentedButton<OrderLocation>(
+            segments: [
+              for (final l in OrderLocation.values)
+                ButtonSegment(value: l, label: Text(l.label)),
+            ],
+            selected: {_location},
+            onSelectionChanged: (s) => setState(() => _location = s.first),
+          ),
           const SectionHeader('Način'),
           SegmentedButton<OrderChannel>(
             segments: [
@@ -413,6 +423,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
     final repo = ref.read(repositoryProvider.notifier);
     final order = repo.createOrder(
       customer: _customer!,
+      location: _location,
       channel: _channel,
       handover: _handover,
       itemCount: _itemCount,

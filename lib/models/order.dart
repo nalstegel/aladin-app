@@ -3,8 +3,14 @@ import 'return_proof.dart';
 
 /// Naročilo — skupek preprog ene stranke. Status se vedno izpelje iz kosov.
 class WorkOrder {
-  /// Številka naročila, npr. "1847". Hkrati ID.
+  /// Zaporedna številka naročila, npr. "LJ-001" (glej `lib/core/order_id.dart`).
+  /// Hkrati ID in osnova za ID-je kosov ("LJ-001-2").
   final String id;
+
+  /// Poslovalnica, kjer je bilo naročilo sprejeto — določila predpono [id],
+  /// ko je bilo naročilo ustvarjeno. Nikoli se ne spreminja za obstoječe
+  /// naročilo.
+  final OrderLocation location;
   final OrderChannel channel;
   final HandoverMode handover;
   final OrderStatus status;
@@ -36,6 +42,7 @@ class WorkOrder {
 
   const WorkOrder({
     required this.id,
+    required this.location,
     required this.channel,
     required this.handover,
     required this.status,
@@ -55,7 +62,7 @@ class WorkOrder {
     this.returnProof,
   });
 
-  String get number => '#$id';
+  String get number => id;
 
   /// Naročilo je prepozno, če je rok mimo in še ni predano.
   bool isOverdue(DateTime now) =>
@@ -81,6 +88,7 @@ class WorkOrder {
   }) {
     return WorkOrder(
       id: id,
+      location: location,
       channel: channel ?? this.channel,
       handover: handover ?? this.handover,
       status: status ?? this.status,
@@ -103,6 +111,7 @@ class WorkOrder {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'location': location.name,
         'channel': channel.name,
         'handover': handover.name,
         'status': status.name,
@@ -127,6 +136,10 @@ class WorkOrder {
         j[k] == null ? null : DateTime.parse(j[k] as String);
     return WorkOrder(
       id: j['id'] as String,
+      // Privzeto Ljubljana za naročila iz časa pred uvedbo poslovalnic.
+      location: j['location'] == null
+          ? OrderLocation.ljubljana
+          : OrderLocation.values.byName(j['location'] as String),
       channel: OrderChannel.values.byName(j['channel'] as String),
       handover: HandoverMode.values.byName(j['handover'] as String),
       status: OrderStatus.values.byName(j['status'] as String),
