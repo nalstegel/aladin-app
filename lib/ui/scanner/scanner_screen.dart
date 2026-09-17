@@ -6,6 +6,7 @@ import '../../core/scan.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
+import '../orders/return_flow_screen.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
 import 'scan_capture_screen.dart';
@@ -27,8 +28,9 @@ class ScannerScreen extends ConsumerStatefulWidget {
 }
 
 /// Bližnjice pod okvirjem — koraki, ki jih delavec dejansko dela ob stroju.
-/// "Mere in cena" (finishing) je namenoma zunaj: do njega se pride prek
-/// filtra v Naročilih in prek ploščice na Danes.
+/// "Mere in cena" (finishing) je namenoma zunaj: hitri obračun se od v3
+/// prenove naprej odpre kar iz seznama "V sušenju", ni več svoje čakalne
+/// vrste.
 const _shortcuts = [
   RugStatus.awaitingPickup,
   RugStatus.awaitingWash,
@@ -107,25 +109,42 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     }
 
     if (!_quickMode) {
-      _open(item.id);
+      _openForStatus(item.id, item.status, item.orderId);
       return;
     }
 
     final repo = ref.read(repositoryProvider.notifier);
     final next = repo.nextStatusFor(item);
     if (next == null) {
-      // Naslednji korak zahteva vnos — odpremo podrobnosti kosa.
-      _open(item.id);
+      // Naslednji korak zahteva vnos — odpremo ustrezen zaslon.
+      _openForStatus(item.id, item.status, item.orderId);
       return;
     }
     repo.advance(item.id);
     _showFlash('${item.id} → ${next.label}', AppColors.forRug(next));
   }
 
-  void _open(String id) {
+  /// Pripravljen kos vodi naravnost v postopek vračila njegovega naročila —
+  /// ne v podrobnosti kosa — da je "skeniraj kos → odpre se naročilo" iz v3
+  /// spec §7 mogoče tudi neposredno iz zavihka Skeniraj, ne le prek Danes.
+  void _openForStatus(String itemId, RugStatus status, String orderId) {
+    final state = ref.read(repositoryProvider);
+    final order = state.order(orderId);
+    if (status == RugStatus.ready && order != null && order.status.isHandoverReady) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReturnFlowScreen(
+            orderId: orderId,
+            initialScannedIds: {itemId},
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => RugDetailScreen(itemId: id)),
+      MaterialPageRoute(builder: (_) => RugDetailScreen(itemId: itemId)),
     );
   }
 

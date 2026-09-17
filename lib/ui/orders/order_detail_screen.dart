@@ -62,7 +62,11 @@ class OrderDetailScreen extends ConsumerWidget {
                 DetailRow('Način', order.channel.label),
                 DetailRow('Predaja', order.handover.label),
                 if (order.pickupAt != null)
-                  DetailRow('Prevzem', Fmt.dateTime(order.pickupAt)),
+                  DetailRow(
+                    'Prevzem',
+                    '${Fmt.date(order.pickupAt)} '
+                        '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)}',
+                  ),
                 if (order.deliveryAt != null)
                   DetailRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
                 if (order.dueAt != null)

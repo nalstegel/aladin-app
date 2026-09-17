@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/address.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/customer.dart';
@@ -37,6 +38,9 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   late final TextEditingController _discount;
   late final TextEditingController _notes;
 
+  // Prepreči neskončno zanko med samodejnim izpolnjevanjem pošte/kraja.
+  bool _linkingAddress = false;
+
   @override
   void initState() {
     super.initState();
@@ -46,8 +50,12 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     _phone = TextEditingController(text: c?.phone ?? '');
     _email = TextEditingController(text: c?.email ?? '');
     _address = TextEditingController(text: c?.address ?? '');
-    _postal = TextEditingController(text: c?.postalCode ?? '');
-    _city = TextEditingController(text: c?.city ?? '');
+    // Nova stranka: privzeto 1000 Ljubljana (večina strank je od tam),
+    // delavec ju lahko normalno spremeni za naročila izven Ljubljane.
+    _postal = TextEditingController(text: c?.postalCode ?? (c == null ? '1000' : ''));
+    _city = TextEditingController(text: c?.city ?? (c == null ? 'Ljubljana' : ''));
+    _postal.addListener(_onPostalChanged);
+    _city.addListener(_onCityChanged);
     _taxId = TextEditingController(text: c?.taxId ?? '');
     _contact = TextEditingController(text: c?.contactPerson ?? '');
     _discount = TextEditingController(
@@ -56,6 +64,24 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
           : c!.defaultDiscountPercent.toStringAsFixed(0),
     );
     _notes = TextEditingController(text: c?.notes ?? '');
+  }
+
+  void _onPostalChanged() {
+    if (_linkingAddress) return;
+    final city = cityForPostalCode(_postal.text);
+    if (city == null || _city.text.trim().isNotEmpty) return;
+    _linkingAddress = true;
+    _city.text = city;
+    _linkingAddress = false;
+  }
+
+  void _onCityChanged() {
+    if (_linkingAddress) return;
+    final postal = postalCodeForCity(_city.text);
+    if (postal == null || _postal.text.trim().isNotEmpty) return;
+    _linkingAddress = true;
+    _postal.text = postal;
+    _linkingAddress = false;
   }
 
   @override

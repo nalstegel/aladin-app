@@ -24,8 +24,14 @@ class WorkOrder {
 
   final int itemCount;
 
-  /// Za dostavo: kdaj gremo po preproge.
+  /// Za dostavo: kdaj gremo po preproge. Začetek časovnega okna (npr. 8-10);
+  /// pri "Drugo" je to vpisani "Od".
   final DateTime? pickupAt;
+
+  /// Konec časovnega okna za prevzem, če je bilo izbrano (glej [pickupAt]).
+  /// Null pri naročilih, ki so dobila samo eno uro (stari podatki) ali kjer
+  /// termin ni bil izbran prek okenc.
+  final DateTime? pickupWindowEnd;
 
   /// Za dostavo: dogovorjen termin vračila.
   final DateTime? deliveryAt;
@@ -52,6 +58,7 @@ class WorkOrder {
     this.customerAddress = '',
     required this.itemCount,
     this.pickupAt,
+    this.pickupWindowEnd,
     this.deliveryAt,
     this.dueAt,
     this.notes = '',
@@ -78,6 +85,7 @@ class WorkOrder {
     String? customerAddress,
     int? itemCount,
     DateTime? pickupAt,
+    DateTime? pickupWindowEnd,
     DateTime? deliveryAt,
     DateTime? dueAt,
     String? notes,
@@ -85,6 +93,7 @@ class WorkOrder {
     DateTime? completedAt,
     ReturnProof? returnProof,
     bool clearReadyAt = false,
+    bool clearPickupWindowEnd = false,
   }) {
     return WorkOrder(
       id: id,
@@ -98,6 +107,9 @@ class WorkOrder {
       customerAddress: customerAddress ?? this.customerAddress,
       itemCount: itemCount ?? this.itemCount,
       pickupAt: pickupAt ?? this.pickupAt,
+      pickupWindowEnd: clearPickupWindowEnd
+          ? null
+          : (pickupWindowEnd ?? this.pickupWindowEnd),
       deliveryAt: deliveryAt ?? this.deliveryAt,
       dueAt: dueAt ?? this.dueAt,
       notes: notes ?? this.notes,
@@ -121,6 +133,7 @@ class WorkOrder {
         'customerAddress': customerAddress,
         'itemCount': itemCount,
         'pickupAt': pickupAt?.toIso8601String(),
+        'pickupWindowEnd': pickupWindowEnd?.toIso8601String(),
         'deliveryAt': deliveryAt?.toIso8601String(),
         'dueAt': dueAt?.toIso8601String(),
         'notes': notes,
@@ -149,6 +162,7 @@ class WorkOrder {
       customerAddress: j['customerAddress'] as String? ?? '',
       itemCount: j['itemCount'] as int,
       pickupAt: d('pickupAt'),
+      pickupWindowEnd: d('pickupWindowEnd'),
       deliveryAt: d('deliveryAt'),
       dueAt: d('dueAt'),
       notes: j['notes'] as String? ?? '',

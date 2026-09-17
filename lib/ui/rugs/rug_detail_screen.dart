@@ -10,7 +10,7 @@ import '../../models/rug_item.dart';
 import '../orders/order_detail_screen.dart';
 import '../widgets/common.dart';
 import 'finish_sheet.dart';
-import 'measure_sheet.dart';
+import 'quick_finish_sheet.dart';
 
 /// Ena preproga. To okno se odpre ob vsakem skeniranju QR kode.
 class RugDetailScreen extends ConsumerWidget {
@@ -328,11 +328,13 @@ class RugDetailScreen extends ConsumerWidget {
         );
       case RugStatus.drying:
         primary = FilledButton.icon(
-          onPressed: () => MeasureSheet.show(context, item),
+          onPressed: () => QuickFinishSheet.show(context, item),
           icon: const Icon(Icons.straighten),
-          label: const Text('Suho → vnesi mere'),
+          label: const Text('Hitri obračun'),
         );
       case RugStatus.finishing:
+        // Redek primer — kos je bil ročno vrnjen na "Mere in cena" (glej
+        // Popravi status spodaj). Normalni potek dela tja ne pripelje več.
         primary = FilledButton.icon(
           onPressed: () => FinishSheet.show(context, item),
           icon: const Icon(Icons.euro),
