@@ -25,23 +25,22 @@ AppState buildSeedState() {
     AppUser(id: 'u-ana', name: 'Ana', role: UserRole.worker),
   ];
 
+  // Štiri vrste in štiri doplačila, poimenovani in prešteti natanko po v3
+  // spec §4 (kompaktna mreža v hitrem obračunu). Id-ji ostajajo stari, da
+  // zgodovinski kosi spodaj (rugTypeName/AppliedExtra so lastni posnetki,
+  // neodvisni od šifranta) niso prizadeti — glej models/catalog.dart.
   const rugTypes = [
-    RugType(id: 't-sint', name: 'Sintetika', pricePerM2: 12, minChargeM2: 3),
+    RugType(id: 't-sint', name: 'Navadna', pricePerM2: 12, minChargeM2: 3),
     RugType(id: 't-volna', name: 'Volna', pricePerM2: 15, minChargeM2: 3),
-    RugType(id: 't-perzija', name: 'Perzija / ročno vozlana', pricePerM2: 22, minChargeM2: 2),
-    RugType(id: 't-shaggy', name: 'Shaggy / visoki flor', pricePerM2: 16, minChargeM2: 3),
-    RugType(id: 't-tekac', name: 'Tekač / predpražnik', pricePerM2: 10, minChargeM2: 2),
+    RugType(id: 't-perzija', name: 'Perzijska', pricePerM2: 22, minChargeM2: 2),
+    RugType(id: 't-shaggy', name: 'Shaggy', pricePerM2: 16, minChargeM2: 3),
   ];
 
   const extras = [
-    ExtraTemplate(id: 'e-madezi', name: 'Odstranjevanje madežev', kind: ExtraKind.percent, value: 20),
-    ExtraTemplate(id: 'e-dlake', name: 'Odstranjevanje dlak', kind: ExtraKind.percent, value: 15),
-    ExtraTemplate(id: 'e-dezinf', name: 'Dezinfekcija', kind: ExtraKind.perM2, value: 1.5),
-    ExtraTemplate(id: 'e-impreg', name: 'Impregnacija', kind: ExtraKind.perM2, value: 2),
-    ExtraTemplate(id: 'e-vonj', name: 'Odprava neprijetnih vonjav', kind: ExtraKind.fixed, value: 8),
-    ExtraTemplate(id: 'e-express', name: 'Ekspresno (48 h)', kind: ExtraKind.percent, value: 30),
-    ExtraTemplate(id: 'e-popust-stalna', name: 'Popust – stalna stranka', kind: ExtraKind.percent, value: -10),
-    ExtraTemplate(id: 'e-popust-kolicina', name: 'Popust – večja količina', kind: ExtraKind.percent, value: -5),
+    ExtraTemplate(id: 'e-dlake', name: 'Dlake', kind: ExtraKind.percent, value: 15),
+    ExtraTemplate(id: 'e-vonj', name: 'Urin / vonj', kind: ExtraKind.fixed, value: 8),
+    ExtraTemplate(id: 'e-madezi', name: 'Dodatna umazanija', kind: ExtraKind.percent, value: 20),
+    ExtraTemplate(id: 'e-drugo', name: 'Drugo / popravek', kind: ExtraKind.fixed, value: 10),
   ];
 
   final customers = [

@@ -12,16 +12,25 @@ import 'signature_screen.dart';
 /// Varovalka pri vračilu: dokler niso poskenirani vsi kosi, se naročila
 /// ne da zaključiti. Na koncu stranka podpiše prevzem.
 class ReturnFlowScreen extends ConsumerStatefulWidget {
-  const ReturnFlowScreen({super.key, required this.orderId});
+  const ReturnFlowScreen({
+    super.key,
+    required this.orderId,
+    this.initialScannedIds = const {},
+  });
 
   final String orderId;
+
+  /// Kos, ki je bil že poskeniran, preden se je ta zaslon odprl (glej
+  /// `scanner_screen.dart`: skeniranje pripravljenega kosa odpre naročilo
+  /// naravnost tukaj, namesto v podrobnosti kosa).
+  final Set<String> initialScannedIds;
 
   @override
   ConsumerState<ReturnFlowScreen> createState() => _ReturnFlowScreenState();
 }
 
 class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
-  final _scanned = <String>{};
+  late final _scanned = <String>{...widget.initialScannedIds};
 
   @override
   Widget build(BuildContext context) {
@@ -86,15 +95,28 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
               ],
             ),
           ),
-          const SectionHeader(
+          SectionHeader(
             'Kosi',
-            subtitle: 'Poskeniraj vsak kos, preden ga izročiš.',
+            subtitle: 'Skeniraj ali odkljukaj vsak kos, preden ga izročiš.',
+            trailing: allScanned
+                ? null
+                : TextButton(
+                    onPressed: () =>
+                        setState(() => _scanned.addAll(items.map((e) => e.id))),
+                    child: const Text('Označi vse'),
+                  ),
           ),
           for (final item in items) ...[
             AppCard(
               borderColor: _scanned.contains(item.id)
                   ? AppColors.ready.withValues(alpha: 0.6)
                   : null,
+              // Ročni klik je enakovredna pot poleg skeniranja (ne samo za
+              // administratorja) — delavec lahko najde naročilo ročno in
+              // preprosto odkljuka kose, brez kamere.
+              onTap: () => setState(() {
+                if (!_scanned.remove(item.id)) _scanned.add(item.id);
+              }),
               child: Row(
                 children: [
                   Icon(
@@ -130,12 +152,6 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
                       ],
                     ),
                   ),
-                  if (!_scanned.contains(item.id) && isAdmin)
-                    TextButton(
-                      onPressed: () =>
-                          setState(() => _scanned.add(item.id)),
-                      child: const Text('Ročno'),
-                    ),
                 ],
               ),
             ),

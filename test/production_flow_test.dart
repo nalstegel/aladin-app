@@ -93,8 +93,8 @@ void main() {
       itemCount: 1,
     );
     final id = '${order.id}-1';
-    // Sintetika: 12 €/m², minimalni obračun 3 m².
-    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Sintetika');
+    // Navadna: 12 €/m², minimalni obračun 3 m².
+    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Navadna');
 
     repo.advance(id);
     repo.setMeasurements(id, widthCm: 100, lengthCm: 100, rugType: type);
@@ -170,6 +170,44 @@ void main() {
       repo.state.itemsOf(order.id).every((i) => i.status == RugStatus.returned),
       isTrue,
     );
+  });
+
+  test('hitri obračun premakne kos naravnost iz sušenja v pripravljeno', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 1,
+    );
+    final id = '${order.id}-1';
+    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Volna');
+    repo.advance(id);
+    expect(repo.state.item(id)!.status, RugStatus.drying);
+
+    // Osnova 6 m² × 15 € = 90 €, +20 % madeži = 108 €, −10 % popust = 97,20 €.
+    repo.finishRugFromDrying(
+      id,
+      widthCm: 200,
+      lengthCm: 300,
+      rugType: type,
+      extras: const [
+        AppliedExtra(
+          name: 'Odstranjevanje madežev',
+          kind: ExtraKind.percent,
+          value: 20,
+        ),
+      ],
+      discountPercent: 10,
+    );
+
+    final item = repo.state.item(id)!;
+    // Nikoli ne postane "finishing" — v3 spec §5 to namenoma ni več ločen
+    // status, skozi katerega bi se kos ustavil.
+    expect(item.status, RugStatus.ready);
+    expect(item.rugTypeName, 'Volna');
+    expect(item.price, closeTo(97.20, 0.01));
+    expect(repo.state.order(order.id)!.status, OrderStatus.awaitingCollection);
   });
 
   test('ponovno pranje razveljavi potrjeno ceno', () {

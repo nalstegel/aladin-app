@@ -11,6 +11,7 @@ import '../orders/order_card.dart';
 import '../orders/return_flow_screen.dart';
 import '../scanner/work_list_screen.dart';
 import '../widgets/common.dart';
+import 'quick_order_card.dart';
 
 /// Nadzorna plošča za današnji dan — nadomešča list, kamor se je do zdaj
 /// pisalo, kdo je za prevzem in kdo za vračilo.
@@ -57,6 +58,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               'Danes',
               subtitle: Fmt.dayHeader(DateTime.now()),
               trailing: _bell(unread),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: QuickOrderCard(),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -151,9 +156,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  /// Pet ploščic v dveh vrstah. Peta ("Mere in cena") je tu zato, ker so
-  /// bližnjice pod skenerjem namenoma brez nje — sicer do čakalne vrste za
-  /// merjenje ne bi vodilo nič.
+  /// Štiri ploščice v dveh vrstah. "Mere in cena" ni več samostojna ploščica
+  /// (v3 spec §5) — hitri obračun se zdaj odpre kar iz seznama v Sušenju, ni
+  /// več ločene čakalne vrste, ki bi jo bilo treba prikazati posebej.
   Widget _tiles(
     List<WorkOrder> pickups,
     List<WorkOrder> deliveries,
@@ -177,8 +182,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   () => _scrollTo(_pickupsKey)),
               _tile('${deliveries.length}', 'Vračilo', Icons.home_outlined,
                   AppColors.ready, () => _scrollTo(_deliveriesKey)),
-              _tile('${counts[RugStatus.drying] ?? 0}', 'Sušenje', Icons.air,
-                  AppColors.drying, () => _openList(RugStatus.drying)),
             ],
           ),
           const Padding(
@@ -187,9 +190,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
           Row(
             children: [
-              _tile('${counts[RugStatus.finishing] ?? 0}', 'Mere in cena',
-                  Icons.straighten, AppColors.finishing,
-                  () => _openList(RugStatus.finishing)),
+              _tile('${counts[RugStatus.drying] ?? 0}', 'Sušenje', Icons.air,
+                  AppColors.drying, () => _openList(RugStatus.drying)),
               _tile('${overdue.length}', 'Zamude',
                   Icons.warning_amber_rounded, AppColors.danger,
                   () => _scrollTo(_overdueKey)),

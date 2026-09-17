@@ -206,6 +206,7 @@ class Repository extends StateNotifier<AppState> {
     required HandoverMode handover,
     required int itemCount,
     DateTime? pickupAt,
+    DateTime? pickupWindowEnd,
     DateTime? deliveryAt,
     DateTime? dueAt,
     String notes = '',
@@ -234,6 +235,7 @@ class Repository extends StateNotifier<AppState> {
       customerAddress: customer.fullAddress,
       itemCount: itemCount,
       pickupAt: pickupAt,
+      pickupWindowEnd: pickupWindowEnd,
       deliveryAt: deliveryAt,
       dueAt: dueAt,
       notes: notes.trim(),
@@ -446,6 +448,50 @@ class Repository extends StateNotifier<AppState> {
         RugStatus.ready,
         DateTime.now(),
         'Cena potrjena: ${finalPrice.toStringAsFixed(2)} €',
+      ),
+    ));
+  }
+
+  /// Hitri obračun (v3 spec §3/§4): mere, vrsta, doplačila in cena v enem
+  /// koraku, naravnost iz Sušenja v Pripravljeno — brez postanka na
+  /// "Mere in cena", da se ta status ne pokaže kot ločena čakalna vrsta.
+  /// [setMeasurements] in [finishItem] ostajata za urejanje že izmerjenih
+  /// kosov (npr. ročni popravek statusa nazaj na "Mere in cena").
+  void finishRugFromDrying(
+    String itemId, {
+    double? widthCm,
+    double? lengthCm,
+    double? manualM2,
+    required RugType rugType,
+    required List<AppliedExtra> extras,
+    required double discountPercent,
+    double? priceOverride,
+    String notes = '',
+  }) {
+    final item = state.item(itemId);
+    if (item == null) return;
+    final measured = item.copyWith(
+      widthCm: widthCm,
+      lengthCm: lengthCm,
+      manualM2: manualM2,
+      clearManualM2: manualM2 == null,
+      rugTypeId: rugType.id,
+      rugTypeName: rugType.name,
+      pricePerM2: rugType.pricePerM2,
+      minChargeM2: rugType.minChargeM2,
+      extras: extras,
+      discountPercent: discountPercent,
+      notes: notes,
+    );
+    final finalPrice = priceOverride ?? measured.computedPrice;
+    _saveItem(measured.copyWith(
+      status: RugStatus.ready,
+      confirmedPrice: finalPrice,
+      history: _event(
+        item,
+        RugStatus.ready,
+        DateTime.now(),
+        'Hitri obračun potrjen: ${finalPrice.toStringAsFixed(2)} €',
       ),
     ));
   }

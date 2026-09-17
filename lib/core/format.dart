@@ -22,6 +22,13 @@ class Fmt {
   static String time(DateTime? d) => d == null ? '—' : _time.format(d);
   static String dateTime(DateTime? d) => d == null ? '—' : _dateTime.format(d);
 
+  /// "8:00–10:00" za časovno okno prevzema, ali samo uro, če okno nima konca.
+  static String timeRange(DateTime? start, DateTime? end) {
+    if (start == null) return '—';
+    if (end == null) return time(start);
+    return '${time(start)}–${time(end)}';
+  }
+
   static String weekday(DateTime d) => _dni[d.weekday - 1];
 
   /// "danes", "jutri", "sreda, 12. 3." — kot na listu, ki ga zamenjujemo.

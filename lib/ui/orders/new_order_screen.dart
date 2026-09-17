@@ -8,6 +8,7 @@ import '../../models/customer.dart';
 import '../../models/enums.dart';
 import '../customers/customer_form.dart';
 import '../widgets/common.dart';
+import '../widgets/pickup_window_picker.dart';
 import 'labels_screen.dart';
 
 /// Sprejem naročila. Isti obrazec za vse tri kanale — razlikujejo se
@@ -34,7 +35,9 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
   late HandoverMode _handover = _defaultHandover(widget.initialChannel);
   Customer? _customer;
   int _itemCount = 1;
-  DateTime? _pickupAt;
+  DateTime _pickupDate = DateTime.now().add(const Duration(days: 1));
+  TimeOfDay? _pickupStart;
+  TimeOfDay? _pickupEnd;
   DateTime? _deliveryAt;
   DateTime? _dueAt;
   final _search = TextEditingController();
@@ -89,9 +92,6 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
             onSelectionChanged: (s) => setState(() {
               _channel = s.first;
               _handover = _defaultHandover(_channel);
-              if (_channel != OrderChannel.dropoff && _pickupAt == null) {
-                _pickupAt = DateTime.now().add(const Duration(days: 1));
-              }
             }),
           ),
           const SectionHeader('Stranka'),
@@ -321,13 +321,24 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
     return AppCard(
       child: Column(
         children: [
-          if (_channel != OrderChannel.dropoff)
-            _dateTile(
+          if (_channel != OrderChannel.dropoff) ...[
+            const Text(
               'Prevzem pri stranki',
-              _pickupAt,
-              (d) => setState(() => _pickupAt = d),
-              icon: Icons.local_shipping_outlined,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
+            const SizedBox(height: 8),
+            PickupWindowPicker(
+              date: _pickupDate,
+              onDateChanged: (d) => setState(() => _pickupDate = d),
+              start: _pickupStart,
+              end: _pickupEnd,
+              onWindowChanged: (start, end) => setState(() {
+                _pickupStart = start;
+                _pickupEnd = end;
+              }),
+            ),
+            const Divider(height: 24),
+          ],
           _dateTile(
             'Obljubljen rok',
             _dueAt,
@@ -419,6 +430,16 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
     );
   }
 
+  DateTime? get _pickupAt => _pickupStart == null
+      ? null
+      : DateTime(_pickupDate.year, _pickupDate.month, _pickupDate.day,
+          _pickupStart!.hour, _pickupStart!.minute);
+
+  DateTime? get _pickupWindowEnd => _pickupEnd == null
+      ? null
+      : DateTime(_pickupDate.year, _pickupDate.month, _pickupDate.day,
+          _pickupEnd!.hour, _pickupEnd!.minute);
+
   void _submit() {
     final repo = ref.read(repositoryProvider.notifier);
     final order = repo.createOrder(
@@ -428,6 +449,8 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
       handover: _handover,
       itemCount: _itemCount,
       pickupAt: _channel == OrderChannel.dropoff ? null : _pickupAt,
+      pickupWindowEnd:
+          _channel == OrderChannel.dropoff ? null : _pickupWindowEnd,
       deliveryAt:
           _handover == HandoverMode.weDeliver ? _deliveryAt : null,
       dueAt: _dueAt,

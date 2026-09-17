@@ -5,6 +5,7 @@ import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
+import '../rugs/quick_finish_sheet.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
 
@@ -55,12 +56,16 @@ class WorkListScreen extends ConsumerWidget {
                 final order = state.order(item.orderId);
                 return AppCard(
                   accent: color,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => RugDetailScreen(itemId: item.id),
-                    ),
-                  ),
+                  // Iz Sušenja gre tap naravnost v hitri obračun (v3 spec
+                  // §3) — ne v podrobnosti kosa kot za ostale korake.
+                  onTap: status == RugStatus.drying
+                      ? () => QuickFinishSheet.show(context, item)
+                      : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RugDetailScreen(itemId: item.id),
+                            ),
+                          ),
                   child: Row(
                     children: [
                       Expanded(

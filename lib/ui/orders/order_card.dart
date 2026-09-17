@@ -161,7 +161,8 @@ class OrderCard extends ConsumerWidget {
     switch (order.status) {
       case OrderStatus.scheduledPickup:
         icon = Icons.schedule;
-        text = '${Fmt.time(order.pickupAt)} · ${order.customerAddress}';
+        text = '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)} · '
+            '${order.customerAddress}';
       case OrderStatus.awaitingDelivery:
         icon = Icons.schedule;
         text = order.deliveryAt == null

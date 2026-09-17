@@ -126,9 +126,11 @@ class _FinishSheetState extends ConsumerState<FinishSheet> {
             const SectionHeader('Kaj se je dejansko delalo'),
             for (final t in templates.where((t) => !t.isDiscount))
               _extraTile(t, preview),
-            const SectionHeader('Popusti'),
-            for (final t in templates.where((t) => t.isDiscount))
-              _extraTile(t, preview),
+            if (templates.any((t) => t.isDiscount)) ...[
+              const SectionHeader('Popusti'),
+              for (final t in templates.where((t) => t.isDiscount))
+                _extraTile(t, preview),
+            ],
             const SizedBox(height: 8),
             Row(
               children: [
