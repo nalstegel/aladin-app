@@ -535,22 +535,26 @@ preklop na Blaze, `firebase deploy --only functions`. Na iOS so blokirana
 Replaced the A4 PDF label sheet with direct thermal printing on a Zebra
 ZD230 that lives on the shop's LAN. Implementation:
 - `lib/core/zpl.dart` — pure ZPL template builder (`buildLabelZpl`), no I/O,
-  easy to unit-test. Label is 60×40mm at 203dpi (`labelWidthDots` = 480,
-  `labelHeightDots` = 320 — the only resolution the ZD230 comes in).
-  Layout is horizontal — QR on the left (magnification 6, tuned by eye over
-  a few rounds of feedback), order id/customer
-  name/dimensions/item id stacked to its right (`^FB` word-wraps the
-  customer name to 2 lines since it now has less horizontal room) — this
-  uses the label's longer 60mm side productively instead of stacking
-  everything top-to-bottom in a narrow left column. Prints: order id,
-  customer name, carpet dimensions (`Fmt.dimensions`, blank until the rug is
-  measured), the QR code, and the item id as small plain text (needed for
-  the existing manual-entry fallback in `scanner_screen.dart` when a QR
-  won't scan — without printed text there's nothing to type in).
-  Deliberately does **not** print a per-piece "KOS x/y" marker or a date,
-  per the exact field list requested; worth reconsidering if two rugs in
-  the same multi-item order ever need to be told apart by eye without
-  scanning.
+  easy to unit-test. Label is **portrait**, 40mm wide × 60mm tall, at 203dpi
+  (`labelWidthDots` = 320, `labelHeightDots` = 480 — the only resolution the
+  ZD230 comes in). This went through three rounds tuned against real
+  printed labels: a first landscape 60×40 draft turned out to have
+  width/height backwards (confirmed from a photo of the actual print — huge
+  blank space below the content because the real media is taller than
+  declared), then a horizontal QR-left/text-right layout, before the owner
+  gave the real physical orientation (40mm on top/bottom, 60mm on the
+  sides) and asked for portrait with the QR on top instead. Current layout:
+  QR centered at the top (magnification 8), order id/customer
+  name/dimensions/item id stacked below it (`^FB` word-wraps the customer
+  name to 2 lines). Prints: order id, customer name, carpet dimensions
+  (`Fmt.dimensions`, the whole line omitted — not printed as a bare "—" —
+  until the rug is measured), the QR code, and the item id as small plain
+  text (needed for the existing manual-entry fallback in
+  `scanner_screen.dart` when a QR won't scan — without printed text there's
+  nothing to type in). Deliberately does **not** print a per-piece "KOS x/y"
+  marker or a date, per the exact field list requested; worth reconsidering
+  if two rugs in the same multi-item order ever need to be told apart by
+  eye without scanning.
 - `lib/data/zebra_printer.dart` — `ZebraPrinterService` opens a raw TCP
   socket to `zebraPrinterIp:9100` (the "raw" printing port every Zebra
   Link-OS printer listens on) and writes the ZPL bytes. No vendor SDK, no
@@ -589,10 +593,13 @@ Settings → Aladin → Local Network.
   built-in ZD230 font — print a real label with a name containing them and
   confirm before relying on it; if it renders wrong, the fix is a different
   `^A` font or a Zebra bitmap font with the right code page.
-- No physical ZD230 has been used to test this yet — verify a full-order
-  print (multiple items back to back) doesn't drop labels or need a delay
-  between sockets, and that the 60×40mm layout in `zpl.dart` actually fits
-  the media loaded in the printer.
+- The 40×60mm portrait size is what the owner physically measured off the
+  label roll, but this specific layout (QR mag 8, portrait) hasn't itself
+  been print-tested yet — confirm it actually fills the label without
+  clipping before treating this as done.
+- No physical ZD230 has been used to test a full-order print yet — verify
+  multiple items back to back doesn't drop labels or need a delay between
+  sockets.
 
 ### 4.7 — Per-location order numbering (LJ-.../MB-...) — DONE, UNVERIFIED on real hardware (2026-09-17)
 Orders are no longer numbered with a single global counter (`#1847` style).
