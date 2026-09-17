@@ -16,6 +16,21 @@ extension OrderChannelX on OrderChannel {
       };
 }
 
+/// Poslovalnica, kjer je bilo naročilo sprejeto — določi predpono
+/// zaporedne številke naročila (glej `lib/core/order_id.dart`).
+enum OrderLocation { ljubljana, maribor }
+
+extension OrderLocationX on OrderLocation {
+  String get label => switch (this) {
+        OrderLocation.ljubljana => 'Ljubljana',
+        OrderLocation.maribor => 'Maribor',
+      };
+  String get code => switch (this) {
+        OrderLocation.ljubljana => 'LJ',
+        OrderLocation.maribor => 'MB',
+      };
+}
+
 /// Kako preproge pridejo nazaj do stranke.
 enum HandoverMode { customerCollects, weDeliver }
 

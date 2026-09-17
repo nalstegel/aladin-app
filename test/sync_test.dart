@@ -47,7 +47,8 @@ AppState _asRemote(AppState s, {List<Customer>? customers}) => AppState(
       rugTypes: s.rugTypes,
       extraTemplates: s.extraTemplates,
       users: s.users,
-      nextOrderNumber: s.nextOrderNumber,
+      nextOrderSeqLjubljana: s.nextOrderSeqLjubljana,
+      nextOrderSeqMaribor: s.nextOrderSeqMaribor,
     );
 
 void main() {

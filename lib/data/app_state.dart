@@ -14,7 +14,12 @@ class AppState {
   final List<ExtraTemplate> extraTemplates;
   final List<AppUser> users;
   final String? currentUserId;
-  final int nextOrderNumber;
+
+  /// Naslednja zaporedna številka naročila za vsako poslovalnico posebej
+  /// (glej `lib/core/order_id.dart` za format LJ-001/MB-001…). Šteje se od
+  /// začetka in se nikoli ne ponastavi.
+  final int nextOrderSeqLjubljana;
+  final int nextOrderSeqMaribor;
 
   const AppState({
     this.customers = const [],
@@ -24,8 +29,14 @@ class AppState {
     this.extraTemplates = const [],
     this.users = const [],
     this.currentUserId,
-    this.nextOrderNumber = 1847,
+    this.nextOrderSeqLjubljana = 1,
+    this.nextOrderSeqMaribor = 1,
   });
+
+  int nextOrderSeq(OrderLocation location) => switch (location) {
+        OrderLocation.ljubljana => nextOrderSeqLjubljana,
+        OrderLocation.maribor => nextOrderSeqMaribor,
+      };
 
   AppUser? get currentUser {
     if (currentUserId == null) return null;
@@ -106,7 +117,8 @@ class AppState {
     List<ExtraTemplate>? extraTemplates,
     List<AppUser>? users,
     String? currentUserId,
-    int? nextOrderNumber,
+    int? nextOrderSeqLjubljana,
+    int? nextOrderSeqMaribor,
     bool clearCurrentUser = false,
   }) =>
       AppState(
@@ -118,7 +130,8 @@ class AppState {
         users: users ?? this.users,
         currentUserId:
             clearCurrentUser ? null : (currentUserId ?? this.currentUserId),
-        nextOrderNumber: nextOrderNumber ?? this.nextOrderNumber,
+        nextOrderSeqLjubljana: nextOrderSeqLjubljana ?? this.nextOrderSeqLjubljana,
+        nextOrderSeqMaribor: nextOrderSeqMaribor ?? this.nextOrderSeqMaribor,
       );
 
   Map<String, dynamic> toJson() => {
@@ -129,7 +142,8 @@ class AppState {
         'extraTemplates': extraTemplates.map((e) => e.toJson()).toList(),
         'users': users.map((e) => e.toJson()).toList(),
         'currentUserId': currentUserId,
-        'nextOrderNumber': nextOrderNumber,
+        'nextOrderSeqLjubljana': nextOrderSeqLjubljana,
+        'nextOrderSeqMaribor': nextOrderSeqMaribor,
       };
 
   factory AppState.fromJson(Map<String, dynamic> j) {
@@ -145,7 +159,8 @@ class AppState {
       extraTemplates: parse('extraTemplates', ExtraTemplate.fromJson),
       users: parse('users', AppUser.fromJson),
       currentUserId: j['currentUserId'] as String?,
-      nextOrderNumber: j['nextOrderNumber'] as int? ?? 1847,
+      nextOrderSeqLjubljana: j['nextOrderSeqLjubljana'] as int? ?? 1,
+      nextOrderSeqMaribor: j['nextOrderSeqMaribor'] as int? ?? 1,
     );
   }
 }

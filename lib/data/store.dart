@@ -145,8 +145,10 @@ class FirestoreStore implements DataStore {
       extraTemplates:
           snaps[4].docs.map((d) => ExtraTemplate.fromJson(d.data())).toList(),
       users: snaps[5].docs.map((d) => AppUser.fromJson(d.data())).toList(),
-      nextOrderNumber:
-          (counters.data()?['nextOrderNumber'] as num?)?.toInt() ?? 1847,
+      nextOrderSeqLjubljana:
+          (counters.data()?['nextOrderSeqLjubljana'] as num?)?.toInt() ?? 1,
+      nextOrderSeqMaribor:
+          (counters.data()?['nextOrderSeqMaribor'] as num?)?.toInt() ?? 1,
     );
     _lastSaved = state;
     return state;
@@ -166,7 +168,8 @@ class FirestoreStore implements DataStore {
     List<RugType>? rugTypes;
     List<ExtraTemplate>? extraTemplates;
     List<AppUser>? users;
-    int? nextOrderNumber;
+    int? nextOrderSeqLjubljana;
+    int? nextOrderSeqMaribor;
 
     late final StreamController<AppState> controller;
     final subs = <StreamSubscription<dynamic>>[];
@@ -179,7 +182,8 @@ class FirestoreStore implements DataStore {
           rugTypes == null ||
           extraTemplates == null ||
           users == null ||
-          nextOrderNumber == null) {
+          nextOrderSeqLjubljana == null ||
+          nextOrderSeqMaribor == null) {
         return;
       }
       final state = AppState(
@@ -189,7 +193,8 @@ class FirestoreStore implements DataStore {
         rugTypes: rugTypes!,
         extraTemplates: extraTemplates!,
         users: users!,
-        nextOrderNumber: nextOrderNumber!,
+        nextOrderSeqLjubljana: nextOrderSeqLjubljana!,
+        nextOrderSeqMaribor: nextOrderSeqMaribor!,
       );
       // Osnova za primerjavo pri naslednjem shranjevanju: objekti v tem
       // stanju so iste instance, ki jih bo Repository nosil naprej, zato
@@ -226,8 +231,12 @@ class FirestoreStore implements DataStore {
           emit();
         }, onError: controller.addError),
         _counters.snapshots().listen((d) {
-          nextOrderNumber = (d.data()?['nextOrderNumber'] as num?)?.toInt() ??
-              const AppState().nextOrderNumber;
+          nextOrderSeqLjubljana =
+              (d.data()?['nextOrderSeqLjubljana'] as num?)?.toInt() ??
+                  const AppState().nextOrderSeqLjubljana;
+          nextOrderSeqMaribor =
+              (d.data()?['nextOrderSeqMaribor'] as num?)?.toInt() ??
+                  const AppState().nextOrderSeqMaribor;
           emit();
         }, onError: controller.addError),
       ]);
@@ -304,9 +313,16 @@ class FirestoreStore implements DataStore {
       writes++;
     }
 
-    if (state.nextOrderNumber != _lastSaved.nextOrderNumber) {
-      batch.set(_counters, {'nextOrderNumber': state.nextOrderNumber},
-          SetOptions(merge: true));
+    if (state.nextOrderSeqLjubljana != _lastSaved.nextOrderSeqLjubljana ||
+        state.nextOrderSeqMaribor != _lastSaved.nextOrderSeqMaribor) {
+      batch.set(
+        _counters,
+        {
+          'nextOrderSeqLjubljana': state.nextOrderSeqLjubljana,
+          'nextOrderSeqMaribor': state.nextOrderSeqMaribor,
+        },
+        SetOptions(merge: true),
+      );
       writes++;
     }
 

@@ -4,7 +4,7 @@ import 'status_event.dart';
 
 /// Ena preproga. Ima svojo QR etiketo in svojo pot skozi proizvodnjo.
 class RugItem {
-  /// Oblika "1847-2" — hkrati vsebina QR kode.
+  /// Oblika "LJ-001-2" (`orderId` + "-" + `index`) — hkrati vsebina QR kode.
   final String id;
   final String orderId;
 
@@ -63,7 +63,11 @@ class RugItem {
   });
 
   String get label => 'KOS $index/$ofTotal';
-  String get orderNumber => id.split('-').first;
+
+  /// Enako kot [orderId] — ohranjeno kot getter, ker ga UI že uporablja za
+  /// prikaz. Prej je parsiral [id] (`id.split('-').first`), kar se je
+  /// pokvarilo, ko so ID-ji naročil sami dobili vezaj (npr. "LJ-001").
+  String get orderNumber => orderId;
 
   /// Kdaj se je kos nazadnje premaknil — za delovne sezname ob stroju.
   DateTime? get lastChangeAt => history.isEmpty ? null : history.last.at;

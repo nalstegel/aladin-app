@@ -120,10 +120,11 @@ AppState buildSeedState() {
         note: note,
       );
 
-  // -------------------------------------------------- #1847 primer iz koncepta
+  // -------------------------------------------------- LJ-005 primer iz koncepta
   // Novak ima 3 kose: dva sta pripravljena, tretji je še v sušilnici.
   orders.add(WorkOrder(
-    id: '1847',
+    id: 'LJ-005',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.dropoff,
     handover: HandoverMode.customerCollects,
     status: OrderStatus.inProduction,
@@ -139,8 +140,8 @@ AppState buildSeedState() {
   ));
   items.addAll([
     RugItem(
-      id: '1847-1',
-      orderId: '1847',
+      id: 'LJ-005-1',
+      orderId: 'LJ-005',
       index: 1,
       ofTotal: 3,
       status: RugStatus.ready,
@@ -163,8 +164,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1847-2',
-      orderId: '1847',
+      id: 'LJ-005-2',
+      orderId: 'LJ-005',
       index: 2,
       ofTotal: 3,
       status: RugStatus.ready,
@@ -183,8 +184,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1847-3',
-      orderId: '1847',
+      id: 'LJ-005-3',
+      orderId: 'LJ-005',
       index: 3,
       ofTotal: 3,
       status: RugStatus.drying,
@@ -195,9 +196,10 @@ AppState buildSeedState() {
     ),
   ]);
 
-  // ------------------------------------------- #1844 vse gotovo, čaka stranko
+  // ------------------------------------------- LJ-002 vse gotovo, čaka stranko
   orders.add(WorkOrder(
-    id: '1844',
+    id: 'LJ-002',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.dropoff,
     handover: HandoverMode.customerCollects,
     status: OrderStatus.awaitingCollection,
@@ -213,8 +215,8 @@ AppState buildSeedState() {
   ));
   items.addAll([
     RugItem(
-      id: '1844-1',
-      orderId: '1844',
+      id: 'LJ-002-1',
+      orderId: 'LJ-002',
       index: 1,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -233,8 +235,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1844-2',
-      orderId: '1844',
+      id: 'LJ-002-2',
+      orderId: 'LJ-002',
       index: 2,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -254,9 +256,10 @@ AppState buildSeedState() {
     ),
   ]);
 
-  // ------------------------------------------------ #1845 dostava, za vračilo
+  // ------------------------------------------------ LJ-003 dostava, za vračilo
   orders.add(WorkOrder(
-    id: '1845',
+    id: 'LJ-003',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.delivery,
     handover: HandoverMode.weDeliver,
     status: OrderStatus.awaitingDelivery,
@@ -275,8 +278,8 @@ AppState buildSeedState() {
   ));
   items.addAll([
     RugItem(
-      id: '1845-1',
-      orderId: '1845',
+      id: 'LJ-003-1',
+      orderId: 'LJ-003',
       index: 1,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -300,8 +303,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1845-2',
-      orderId: '1845',
+      id: 'LJ-003-2',
+      orderId: 'LJ-003',
       index: 2,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -322,9 +325,10 @@ AppState buildSeedState() {
     ),
   ]);
 
-  // ------------------------------------------------------ #1846 B2B v obdelavi
+  // ------------------------------------------------------ LJ-004 B2B v obdelavi
   orders.add(WorkOrder(
-    id: '1846',
+    id: 'LJ-004',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.b2b,
     handover: HandoverMode.weDeliver,
     status: OrderStatus.inProduction,
@@ -343,8 +347,8 @@ AppState buildSeedState() {
   for (var n = 1; n <= 4; n++) {
     final done = n <= 2;
     items.add(RugItem(
-      id: '1846-$n',
-      orderId: '1846',
+      id: 'LJ-004-$n',
+      orderId: 'LJ-004',
       index: n,
       ofTotal: 4,
       status: done ? RugStatus.ready : (n == 3 ? RugStatus.drying : RugStatus.awaitingWash),
@@ -366,9 +370,10 @@ AppState buildSeedState() {
     ));
   }
 
-  // ------------------------------------------------- #1848 jutrišnji prevzem
+  // ------------------------------------------------- LJ-006 jutrišnji prevzem
   orders.add(WorkOrder(
-    id: '1848',
+    id: 'LJ-006',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.delivery,
     handover: HandoverMode.weDeliver,
     status: OrderStatus.scheduledPickup,
@@ -385,8 +390,8 @@ AppState buildSeedState() {
   ));
   for (var n = 1; n <= 5; n++) {
     items.add(RugItem(
-      id: '1848-$n',
-      orderId: '1848',
+      id: 'LJ-006-$n',
+      orderId: 'LJ-006',
       index: n,
       ofTotal: 5,
       status: RugStatus.awaitingPickup,
@@ -394,9 +399,10 @@ AppState buildSeedState() {
     ));
   }
 
-  // ------------------------------------------ #1842 zaključeno, s podpisom
+  // ------------------------------------------ LJ-001 zaključeno, s podpisom
   orders.add(WorkOrder(
-    id: '1842',
+    id: 'LJ-001',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.dropoff,
     handover: HandoverMode.customerCollects,
     status: OrderStatus.completed,
@@ -413,7 +419,7 @@ AppState buildSeedState() {
       returnedAt: day(-33, 17, 10),
       userId: 'u-marko',
       userName: 'Marko',
-      scannedItemIds: const ['1842-1'],
+      scannedItemIds: const ['LJ-001-1'],
       receivedByName: 'Janez Novak',
       signatureBase64: null,
       overrideReason: 'Demo podatek – podpis ni bil zajet.',
@@ -421,8 +427,8 @@ AppState buildSeedState() {
     ),
   ));
   items.add(RugItem(
-    id: '1842-1',
-    orderId: '1842',
+    id: 'LJ-001-1',
+    orderId: 'LJ-001',
     index: 1,
     ofTotal: 1,
     status: RugStatus.returned,
@@ -450,6 +456,7 @@ AppState buildSeedState() {
     extraTemplates: extras,
     users: users,
     currentUserId: null,
-    nextOrderNumber: 1849,
+    nextOrderSeqLjubljana: 7,
+    nextOrderSeqMaribor: 1,
   );
 }

@@ -151,7 +151,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Vpiši oznako s etikete, npr. 1847-2.',
+              'Vpiši oznako s etikete, npr. LJ-001-2.',
               style: TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
             const SizedBox(height: 12),
@@ -159,7 +159,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               controller: controller,
               autofocus: true,
               keyboardType: TextInputType.visiblePassword,
-              decoration: const InputDecoration(hintText: '1847-2'),
+              decoration: const InputDecoration(hintText: 'LJ-001-2'),
               onSubmitted: (v) => Navigator.pop(context, v),
             ),
           ],

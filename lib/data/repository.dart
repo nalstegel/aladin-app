@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/order_id.dart';
 import '../models/app_user.dart';
 import '../models/catalog.dart';
 import '../models/customer.dart';
@@ -200,6 +201,7 @@ class Repository extends StateNotifier<AppState> {
   /// Ustvari naročilo in zanj takoj generira vse kose z QR ID-ji.
   WorkOrder createOrder({
     required Customer customer,
+    required OrderLocation location,
     required OrderChannel channel,
     required HandoverMode handover,
     required int itemCount,
@@ -209,8 +211,8 @@ class Repository extends StateNotifier<AppState> {
     String notes = '',
     List<String> conditions = const [],
   }) {
-    final number = state.nextOrderNumber;
-    final id = '$number';
+    final seq = state.nextOrderSeq(location);
+    final id = buildOrderId(location, seq);
     final now = DateTime.now();
 
     // Pri dostavi preprog še nimamo v obratu — čakajo na prevzem.
@@ -220,6 +222,7 @@ class Repository extends StateNotifier<AppState> {
 
     final order = WorkOrder(
       id: id,
+      location: location,
       channel: channel,
       handover: handover,
       status: startStatus == RugStatus.awaitingPickup
@@ -262,7 +265,9 @@ class Repository extends StateNotifier<AppState> {
     _commit(state.copyWith(
       orders: [...state.orders, order],
       items: [...state.items, ...items],
-      nextOrderNumber: number + 1,
+      nextOrderSeqLjubljana:
+          location == OrderLocation.ljubljana ? seq + 1 : null,
+      nextOrderSeqMaribor: location == OrderLocation.maribor ? seq + 1 : null,
     ));
     return order;
   }

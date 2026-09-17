@@ -75,7 +75,7 @@ class ManualScreen extends StatelessWidget {
           _Tip(
             icon: Icons.edit_outlined,
             text: 'Če je etiketa strgana ali umazana, uporabi Ročni vnos kode '
-                'pod skenerjem in vpiši oznako (npr. 1847-2).',
+                'pod skenerjem in vpiši oznako (npr. LJ-001-2).',
           ),
           _Tip(
             icon: Icons.signal_wifi_off,

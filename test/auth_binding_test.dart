@@ -71,6 +71,7 @@ void main() {
     repo.bindAuthUser(uid: 'uid-nal', email: 'nal@aladin.si');
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,
