@@ -93,7 +93,10 @@ class WorkOrder {
     DateTime? completedAt,
     ReturnProof? returnProof,
     bool clearReadyAt = false,
+    bool clearPickupAt = false,
     bool clearPickupWindowEnd = false,
+    bool clearDeliveryAt = false,
+    bool clearDueAt = false,
   }) {
     return WorkOrder(
       id: id,
@@ -106,12 +109,12 @@ class WorkOrder {
       customerPhone: customerPhone ?? this.customerPhone,
       customerAddress: customerAddress ?? this.customerAddress,
       itemCount: itemCount ?? this.itemCount,
-      pickupAt: pickupAt ?? this.pickupAt,
+      pickupAt: clearPickupAt ? null : (pickupAt ?? this.pickupAt),
       pickupWindowEnd: clearPickupWindowEnd
           ? null
           : (pickupWindowEnd ?? this.pickupWindowEnd),
-      deliveryAt: deliveryAt ?? this.deliveryAt,
-      dueAt: dueAt ?? this.dueAt,
+      deliveryAt: clearDeliveryAt ? null : (deliveryAt ?? this.deliveryAt),
+      dueAt: clearDueAt ? null : (dueAt ?? this.dueAt),
       notes: notes ?? this.notes,
       createdAt: createdAt,
       createdByName: createdByName,

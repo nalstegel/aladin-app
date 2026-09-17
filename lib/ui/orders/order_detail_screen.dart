@@ -11,6 +11,7 @@ import '../../models/return_proof.dart';
 import '../../models/rug_item.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
+import 'edit_order_screen.dart';
 import 'labels_screen.dart';
 import 'return_flow_screen.dart';
 
@@ -34,6 +35,17 @@ class OrderDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text('Naročilo ${order.number}'),
         actions: [
+          if (order.status.isOpen)
+            IconButton(
+              tooltip: 'Uredi naročilo',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EditOrderScreen(orderId: orderId),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: 'Etikete',
             icon: const Icon(Icons.qr_code_2),
