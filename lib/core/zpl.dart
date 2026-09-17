@@ -18,8 +18,7 @@ String _escapeZpl(String value) =>
 /// stranico nalepke namesto da bi vse skladala navpično v ožjem levem stolpcu.
 /// `itemId` je hkrati vsebina QR kode in natisnjen kot majhno besedilo poleg
 /// nje — brez tega bi ročni vnos oznake, ko QR ne skenira (glej
-/// `scanner_screen.dart`), na nalepki nimal kaj prepisati. QR je namenoma
-/// velik (magnifikacija 8), da se zanesljivo skenira tudi na hitro, ob stroju.
+/// `scanner_screen.dart`), na nalepki nimal kaj prepisati.
 String buildLabelZpl({
   required String orderId,
   required String customerName,
@@ -31,15 +30,20 @@ String buildLabelZpl({
   final size = _escapeZpl(dimensions);
   final id = _escapeZpl(itemId);
 
+  // Preskoči vrstico z merami, dokler kos ni izmerjen — prazna vrstica z
+  // enim samim pomišljajem na nalepki izgleda kot madež, ne kot podatek.
+  final sizeLine =
+      size.isEmpty ? '' : '^FO240,112^A0N,18,18^FD$size^FS\n';
+
   return '^XA\n'
       '^CI28\n'
       '^PW$labelWidthDots\n'
       '^LL$labelHeightDots\n'
-      '^FO16,60^BQN,2,8\n'
+      '^FO16,60^BQN,2,5\n'
       '^FDLA,$id^FS\n'
       '^FO240,20^A0N,32,32^FD$order^FS\n'
       '^FO240,58^FB220,2,4,L,0^A0N,20,20^FD$name^FS\n'
-      '^FO240,112^A0N,18,18^FD$size^FS\n'
+      '$sizeLine'
       '^FO240,144^A0N,16,16^FD$id^FS\n'
       '^XZ\n';
 }

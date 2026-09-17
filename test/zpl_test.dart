@@ -23,10 +23,21 @@ void main() {
         itemId: 'LJ-001-2',
       );
 
-      expect(zpl, contains('^BQN,2,8'));
+      expect(zpl, contains('^BQN,2,5'));
       expect(zpl, contains('^FDLA,LJ-001-2^FS'));
       expect(zpl, contains('^FDLJ-001-2^FS'));
       expect(zpl, contains('^FDLJ-001^FS'));
+    });
+
+    test('omits the dimensions line entirely when not yet measured', () {
+      final zpl = buildLabelZpl(
+        orderId: 'LJ-001',
+        customerName: 'Novak',
+        dimensions: '',
+        itemId: 'LJ-001-3',
+      );
+
+      expect(zpl, isNot(contains('^FO240,112')));
     });
 
     test('strips ZPL control characters out of order/customer data', () {

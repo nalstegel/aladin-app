@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// postaje, kjer stoji tiskalnik) — zato je zakodiran tukaj, ne kot
 /// nastavitev v aplikaciji. Če se tiskalnik kdaj premakne na drug naslov,
 /// popravi samo to vrednost.
-const zebraPrinterIp = '192.168.1.138';
+const zebraPrinterIp = '192.168.1.38';
 
 /// Pošiljanje ZPL na Zebra ZD230 po omrežju: surova vtičnica na vrata 9100,
 /// ki jo Zebrini tiskalniki vedno poslušajo ("raw TCP" tiskalna storitev) —

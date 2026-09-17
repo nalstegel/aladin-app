@@ -34,7 +34,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           .map((item) => buildLabelZpl(
                 orderId: order.number,
                 customerName: order.customerName,
-                dimensions: Fmt.dimensions(item.widthCm, item.lengthCm),
+                dimensions: item.isMeasured
+                    ? Fmt.dimensions(item.widthCm, item.lengthCm)
+                    : '',
                 itemId: item.id,
               ))
           .join();
@@ -219,14 +221,16 @@ class _LabelPreview extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  Fmt.dimensions(item.widthCm, item.lengthCm),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
+                if (item.isMeasured) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    Fmt.dimensions(item.widthCm, item.lengthCm),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   item.id,

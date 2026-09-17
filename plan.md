@@ -537,8 +537,8 @@ ZD230 that lives on the shop's LAN. Implementation:
 - `lib/core/zpl.dart` — pure ZPL template builder (`buildLabelZpl`), no I/O,
   easy to unit-test. Label is 60×40mm at 203dpi (`labelWidthDots` = 480,
   `labelHeightDots` = 320 — the only resolution the ZD230 comes in).
-  Layout is horizontal — QR on the left (magnification 8, sized up from the
-  initial draft so it scans reliably on the shop floor), order id/customer
+  Layout is horizontal — QR on the left (magnification 6, tuned by eye over
+  a few rounds of feedback), order id/customer
   name/dimensions/item id stacked to its right (`^FB` word-wraps the
   customer name to 2 lines since it now has less horizontal room) — this
   uses the label's longer 60mm side productively instead of stacking
@@ -567,9 +567,24 @@ ZD230 that lives on the shop's LAN. Implementation:
   The `pdf`/`printing` packages and the old A4-grid PDF builder were
   removed since nothing else used them.
 
+**Gotcha found on first real-device test (2026-09-17):** on iPhone, the
+`Socket.connect` to the printer just hung and timed out
+(`SocketException: Connection timed out, host: 192.168.1.138, port: 9100`)
+even with the printer reachable — because `ios/Runner/Info.plist` had no
+`NSLocalNetworkUsageDescription`. Since iOS 14, any raw socket connection to
+a device on the local network (not just Bonjour) is silently blocked
+without that key — no prompt, no error, connections just never complete.
+Added the key; **requires a fresh install** (Info.plist changes don't apply
+via hot reload/restart) and the user must grant the "find and connect to
+devices on your local network" prompt on first print attempt after
+reinstalling — if it was already denied once, it has to be re-enabled in
+Settings → Aladin → Local Network.
+
 **Not yet verified — check before trusting this in production:**
-- `zebraPrinterIp` is set to `192.168.1.138` (the printer's real static IP,
-  confirmed by the owner on 2026-09-17) — not yet print-tested against it.
+- `zebraPrinterIp` is set to `192.168.1.38` (the printer's real static IP;
+  an earlier value of `.138` was a typo, corrected 2026-09-17) — print
+  success still unconfirmed
+  pending a rebuild with the Local Network permission fix above.
 - Slovenian diacritics (č š ž) rely on `^CI28` (UTF-8) being honored by the
   built-in ZD230 font — print a real label with a name containing them and
   confirm before relying on it; if it renders wrong, the fix is a different
