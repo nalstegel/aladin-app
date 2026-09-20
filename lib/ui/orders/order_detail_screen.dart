@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
+import '../../data/repository.dart';
 import '../../models/enums.dart';
 import '../../models/return_proof.dart';
 import '../../models/rug_item.dart';
@@ -125,7 +126,12 @@ class OrderDetailScreen extends ConsumerWidget {
                 : null,
           ),
           for (final item in items) ...[
-            _ItemRow(item: item),
+            _ItemRow(
+              item: item,
+              onDelete: order.status.isOpen && items.length > 1
+                  ? () => _confirmRemoveItem(context, repo, item)
+                  : null,
+            ),
             const SizedBox(height: 8),
           ],
           const SectionHeader('Obračun'),
@@ -357,10 +363,44 @@ class OrderDetailScreen extends ConsumerWidget {
   }
 }
 
+Future<void> _confirmRemoveItem(
+  BuildContext context,
+  Repository repo,
+  RugItem item,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Odstrani kos?'),
+      content: Text('Kos ${item.id} bo trajno odstranjen iz naročila.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Prekliči'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Odstrani'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+
+  repo.removeItemFromOrder(item.id);
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Kos ${item.id} odstranjen')),
+    );
+  }
+}
+
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item});
+  const _ItemRow({required this.item, this.onDelete});
 
   final RugItem item;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -434,6 +474,15 @@ class _ItemRow extends StatelessWidget {
               ),
             ],
           ),
+          if (onDelete != null) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Odstrani kos',
+              icon: const Icon(Icons.delete_outline,
+                  color: AppColors.danger, size: 20),
+              onPressed: onDelete,
+            ),
+          ],
         ],
       ),
     );

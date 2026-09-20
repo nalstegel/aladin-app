@@ -7,6 +7,7 @@ void main() {
     test('pads the sequence to 3 digits per location', () {
       expect(buildOrderId(OrderLocation.ljubljana, 1), 'LJ-001');
       expect(buildOrderId(OrderLocation.maribor, 42), 'MB-042');
+      expect(buildOrderId(OrderLocation.celje, 1), 'CE-001');
       expect(buildOrderId(OrderLocation.ljubljana, 999), 'LJ-999');
     });
 

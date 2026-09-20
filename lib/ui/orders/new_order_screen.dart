@@ -52,7 +52,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
   void initState() {
     super.initState();
     _customer = widget.presetCustomer;
-    _dueAt = DateTime.now().add(const Duration(days: 3));
+    _dueAt = DateTime.now().add(const Duration(days: 7));
   }
 
   @override
@@ -69,7 +69,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
-          const SectionHeader('Poslovalnica'),
+          const SectionHeader('Območje'),
           SegmentedButton<OrderLocation>(
             segments: [
               for (final l in OrderLocation.values)

@@ -63,12 +63,46 @@ class ExtrasScreen extends ConsumerWidget {
                               e.isDiscount ? AppColors.ready : AppColors.primary,
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Izbriši',
+                        icon: const Icon(Icons.delete_outline,
+                            color: AppColors.danger, size: 20),
+                        onPressed: () => _confirmDeleteExtra(context, ref, e),
+                      ),
                     ],
                   ),
                 );
               },
             ),
     );
+  }
+}
+
+Future<void> _confirmDeleteExtra(
+  BuildContext context,
+  WidgetRef ref,
+  ExtraTemplate extra,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Izbriši postavko?'),
+      content: Text('"${extra.name}" ne bo več na voljo pri končni obdelavi.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Prekliči'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Izbriši'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) {
+    ref.read(repositoryProvider.notifier).deleteExtraTemplate(extra.id);
   }
 }
 

@@ -16,18 +16,20 @@ extension OrderChannelX on OrderChannel {
       };
 }
 
-/// Poslovalnica, kjer je bilo naročilo sprejeto — določi predpono
+/// Območje, kjer je bilo naročilo sprejeto — določi predpono
 /// zaporedne številke naročila (glej `lib/core/order_id.dart`).
-enum OrderLocation { ljubljana, maribor }
+enum OrderLocation { ljubljana, maribor, celje }
 
 extension OrderLocationX on OrderLocation {
   String get label => switch (this) {
         OrderLocation.ljubljana => 'Ljubljana',
         OrderLocation.maribor => 'Maribor',
+        OrderLocation.celje => 'Celje',
       };
   String get code => switch (this) {
         OrderLocation.ljubljana => 'LJ',
         OrderLocation.maribor => 'MB',
+        OrderLocation.celje => 'CE',
       };
 }
 

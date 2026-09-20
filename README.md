@@ -99,9 +99,10 @@ ločen zavihek.
 
 ## Naročila in ID-ji
 
-Vsako naročilo dobi zaporedno številko glede na poslovalnico, ki jo delavec
+Vsako naročilo dobi zaporedno številko glede na območje, ki ga delavec
 izbere ob sprejemu: **LJ-001, LJ-002, … LJ-999, LJ1-001, LJ1-002, …** za
-Ljubljano, enako z **MB** za Maribor (glej `lib/core/order_id.dart`).
+Ljubljano, enako z **MB** za Maribor in **CE** za Celje (glej
+`lib/core/order_id.dart`).
 
 ## QR etikete
 

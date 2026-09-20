@@ -80,6 +80,12 @@ class RugTypesScreen extends ConsumerWidget {
                           color: AppColors.primary,
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'Izbriši',
+                        icon: const Icon(Icons.delete_outline,
+                            color: AppColors.danger, size: 20),
+                        onPressed: () => _confirmDeleteRugType(context, ref, t),
+                      ),
                     ],
                   ),
                 );
@@ -102,6 +108,34 @@ class _Note extends StatelessWidget {
         style: TextStyle(fontSize: 12, color: AppColors.textMuted),
       ),
     );
+  }
+}
+
+Future<void> _confirmDeleteRugType(
+  BuildContext context,
+  WidgetRef ref,
+  RugType type,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Izbriši vrsto?'),
+      content: Text('"${type.name}" ne bo več na voljo pri izmeri.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Prekliči'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Izbriši'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) {
+    ref.read(repositoryProvider.notifier).deleteRugType(type.id);
   }
 }
 

@@ -7,7 +7,7 @@ class WorkOrder {
   /// Hkrati ID in osnova za ID-je kosov ("LJ-001-2").
   final String id;
 
-  /// Poslovalnica, kjer je bilo naročilo sprejeto — določila predpono [id],
+  /// Območje, kjer je bilo naročilo sprejeto — določilo predpono [id],
   /// ko je bilo naročilo ustvarjeno. Nikoli se ne spreminja za obstoječe
   /// naročilo.
   final OrderLocation location;
