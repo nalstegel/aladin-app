@@ -19,29 +19,20 @@ String _centeredLine(int y, int fontSize, String text, {int maxLines = 1}) =>
     '^FO0,$y^FB$labelWidthDots,$maxLines,0,C,0'
     '^A0N,$fontSize,$fontSize^FD$text^FS\n';
 
-/// Zgradi ZPL za eno nalepko kosa preproge: QR koda kosa na vrhu (na sredini),
-/// pod njo pa na sredino poravnani št. naročila, ime stranke, mere preproge
-/// in ID kosa.
+/// Zgradi ZPL za eno nalepko kosa preproge: QR koda kosa na vrhu, pod njo pa
+/// ID kosa in ime stranke. Namenoma nič drugega — številka naročila je že
+/// predpona ID-ja kosa ("LJ-002-1"), mere pa ob tiskanju etiket praviloma še
+/// niso znane, ker se kos izmeri šele po pranju.
 ///
 /// `itemId` je hkrati vsebina QR kode in natisnjen kot besedilo — brez tega
 /// bi ročni vnos oznake, ko QR ne skenira (glej `scanner_screen.dart`), na
 /// nalepki nimal kaj prepisati.
 String buildLabelZpl({
-  required String orderId,
   required String customerName,
-  required String dimensions,
   required String itemId,
 }) {
-  final order = _escapeZpl(orderId);
   final name = _escapeZpl(customerName);
-  final size = _escapeZpl(dimensions);
   final id = _escapeZpl(itemId);
-
-  // Preskoči vrstico z merami, dokler kos ni izmerjen — sam pomišljaj na
-  // nalepki izgleda kot madež, ne kot podatek. ID kosa se takrat pomakne
-  // navzgor, da med vrsticami ne ostane luknja.
-  final sizeLine = size.isEmpty ? '' : _centeredLine(310, 24, size);
-  final idY = size.isEmpty ? 310 : 350;
 
   return '^XA\n'
       '^CI28\n'
@@ -49,9 +40,7 @@ String buildLabelZpl({
       '^LL$labelHeightDots\n'
       '^FO85,40^BQN,2,7\n'
       '^FDLA,$id^FS\n'
-      '${_centeredLine(215, 40, order)}'
-      '${_centeredLine(265, 28, name, maxLines: 2)}'
-      '$sizeLine'
-      '${_centeredLine(idY, 22, id)}'
+      '${_centeredLine(215, 40, id)}'
+      '${_centeredLine(270, 28, name, maxLines: 2)}'
       '^XZ\n';
 }

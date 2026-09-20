@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../core/zpl.dart';
 import '../../data/providers.dart';
@@ -32,11 +31,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     try {
       final zpl = items
           .map((item) => buildLabelZpl(
-                orderId: order.number,
                 customerName: order.customerName,
-                dimensions: item.isMeasured
-                    ? Fmt.dimensions(item.widthCm, item.lengthCm)
-                    : '',
                 itemId: item.id,
               ))
           .join();
@@ -199,7 +194,7 @@ class _LabelPreview extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            order.number,
+            item.id,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
@@ -211,24 +206,6 @@ class _LabelPreview extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-          if (item.isMeasured) ...[
-            const SizedBox(height: 4),
-            Text(
-              Fmt.dimensions(item.widthCm, item.lengthCm),
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-            ),
-          ],
-          const SizedBox(height: 4),
-          Text(
-            item.id,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1,
-            ),
           ),
         ],
       ),
