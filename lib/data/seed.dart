@@ -457,5 +457,6 @@ AppState buildSeedState() {
     currentUserId: null,
     nextOrderSeqLjubljana: 7,
     nextOrderSeqMaribor: 1,
+    nextOrderSeqCelje: 1,
   );
 }

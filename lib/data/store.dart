@@ -149,6 +149,8 @@ class FirestoreStore implements DataStore {
           (counters.data()?['nextOrderSeqLjubljana'] as num?)?.toInt() ?? 1,
       nextOrderSeqMaribor:
           (counters.data()?['nextOrderSeqMaribor'] as num?)?.toInt() ?? 1,
+      nextOrderSeqCelje:
+          (counters.data()?['nextOrderSeqCelje'] as num?)?.toInt() ?? 1,
     );
     _lastSaved = state;
     return state;
@@ -170,6 +172,7 @@ class FirestoreStore implements DataStore {
     List<AppUser>? users;
     int? nextOrderSeqLjubljana;
     int? nextOrderSeqMaribor;
+    int? nextOrderSeqCelje;
 
     late final StreamController<AppState> controller;
     final subs = <StreamSubscription<dynamic>>[];
@@ -183,7 +186,8 @@ class FirestoreStore implements DataStore {
           extraTemplates == null ||
           users == null ||
           nextOrderSeqLjubljana == null ||
-          nextOrderSeqMaribor == null) {
+          nextOrderSeqMaribor == null ||
+          nextOrderSeqCelje == null) {
         return;
       }
       final state = AppState(
@@ -195,6 +199,7 @@ class FirestoreStore implements DataStore {
         users: users!,
         nextOrderSeqLjubljana: nextOrderSeqLjubljana!,
         nextOrderSeqMaribor: nextOrderSeqMaribor!,
+        nextOrderSeqCelje: nextOrderSeqCelje!,
       );
       // Osnova za primerjavo pri naslednjem shranjevanju: objekti v tem
       // stanju so iste instance, ki jih bo Repository nosil naprej, zato
@@ -237,6 +242,9 @@ class FirestoreStore implements DataStore {
           nextOrderSeqMaribor =
               (d.data()?['nextOrderSeqMaribor'] as num?)?.toInt() ??
                   const AppState().nextOrderSeqMaribor;
+          nextOrderSeqCelje =
+              (d.data()?['nextOrderSeqCelje'] as num?)?.toInt() ??
+                  const AppState().nextOrderSeqCelje;
           emit();
         }, onError: controller.addError),
       ]);
@@ -271,10 +279,17 @@ class FirestoreStore implements DataStore {
       Map<String, dynamic> Function(T) toJson,
     ) {
       final oldById = {for (final e in oldList) idOf(e): e};
+      final newIds = <String>{};
       for (final entity in newList) {
         final id = idOf(entity);
+        newIds.add(id);
         if (identical(oldById[id], entity)) continue;
         batch.set(col.doc(id), toJson(entity));
+        writes++;
+      }
+      for (final id in oldById.keys) {
+        if (newIds.contains(id)) continue;
+        batch.delete(col.doc(id));
         writes++;
       }
     }
@@ -314,12 +329,14 @@ class FirestoreStore implements DataStore {
     }
 
     if (state.nextOrderSeqLjubljana != _lastSaved.nextOrderSeqLjubljana ||
-        state.nextOrderSeqMaribor != _lastSaved.nextOrderSeqMaribor) {
+        state.nextOrderSeqMaribor != _lastSaved.nextOrderSeqMaribor ||
+        state.nextOrderSeqCelje != _lastSaved.nextOrderSeqCelje) {
       batch.set(
         _counters,
         {
           'nextOrderSeqLjubljana': state.nextOrderSeqLjubljana,
           'nextOrderSeqMaribor': state.nextOrderSeqMaribor,
+          'nextOrderSeqCelje': state.nextOrderSeqCelje,
         },
         SetOptions(merge: true),
       );

@@ -15,11 +15,12 @@ class AppState {
   final List<AppUser> users;
   final String? currentUserId;
 
-  /// Naslednja zaporedna številka naročila za vsako poslovalnico posebej
+  /// Naslednja zaporedna številka naročila za vsako območje posebej
   /// (glej `lib/core/order_id.dart` za format LJ-001/MB-001…). Šteje se od
   /// začetka in se nikoli ne ponastavi.
   final int nextOrderSeqLjubljana;
   final int nextOrderSeqMaribor;
+  final int nextOrderSeqCelje;
 
   const AppState({
     this.customers = const [],
@@ -31,11 +32,13 @@ class AppState {
     this.currentUserId,
     this.nextOrderSeqLjubljana = 1,
     this.nextOrderSeqMaribor = 1,
+    this.nextOrderSeqCelje = 1,
   });
 
   int nextOrderSeq(OrderLocation location) => switch (location) {
         OrderLocation.ljubljana => nextOrderSeqLjubljana,
         OrderLocation.maribor => nextOrderSeqMaribor,
+        OrderLocation.celje => nextOrderSeqCelje,
       };
 
   AppUser? get currentUser {
@@ -119,6 +122,7 @@ class AppState {
     String? currentUserId,
     int? nextOrderSeqLjubljana,
     int? nextOrderSeqMaribor,
+    int? nextOrderSeqCelje,
     bool clearCurrentUser = false,
   }) =>
       AppState(
@@ -132,6 +136,7 @@ class AppState {
             clearCurrentUser ? null : (currentUserId ?? this.currentUserId),
         nextOrderSeqLjubljana: nextOrderSeqLjubljana ?? this.nextOrderSeqLjubljana,
         nextOrderSeqMaribor: nextOrderSeqMaribor ?? this.nextOrderSeqMaribor,
+        nextOrderSeqCelje: nextOrderSeqCelje ?? this.nextOrderSeqCelje,
       );
 
   Map<String, dynamic> toJson() => {
@@ -144,6 +149,7 @@ class AppState {
         'currentUserId': currentUserId,
         'nextOrderSeqLjubljana': nextOrderSeqLjubljana,
         'nextOrderSeqMaribor': nextOrderSeqMaribor,
+        'nextOrderSeqCelje': nextOrderSeqCelje,
       };
 
   factory AppState.fromJson(Map<String, dynamic> j) {
@@ -161,6 +167,7 @@ class AppState {
       currentUserId: j['currentUserId'] as String?,
       nextOrderSeqLjubljana: j['nextOrderSeqLjubljana'] as int? ?? 1,
       nextOrderSeqMaribor: j['nextOrderSeqMaribor'] as int? ?? 1,
+      nextOrderSeqCelje: j['nextOrderSeqCelje'] as int? ?? 1,
     );
   }
 }

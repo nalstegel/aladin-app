@@ -9,12 +9,14 @@ import '../../models/catalog.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
 
-/// Standardne mere za hitre gumbe (v3 spec §4: "1 tm", "2 tm", "3 tm").
-/// Vrednosti so v cm, kot jih vpisujejo delavci.
+/// Hitre gumbe za površino (v3 spec §4: "1 m²", "2 m²", "3 m²") — vsak
+/// gumb je natanko ta površina (širina×dolžina je le interna predstavitev,
+/// dejanske mere se ne prikazujejo). "Drugo" ostane edina pot za ročni vnos
+/// dejanskih mer kosa.
 const _quickSizes = [
-  (label: '1 tm', widthCm: 120.0, lengthCm: 170.0),
-  (label: '2 tm', widthCm: 160.0, lengthCm: 230.0),
-  (label: '3 tm', widthCm: 200.0, lengthCm: 300.0),
+  (label: '1 m²', widthCm: 100.0, lengthCm: 100.0),
+  (label: '2 m²', widthCm: 100.0, lengthCm: 200.0),
+  (label: '3 m²', widthCm: 100.0, lengthCm: 300.0),
 ];
 
 /// Hitri obračun kosa (v3 spec §3/§4): vrsta, mere, doplačila, cena — vse na
@@ -330,8 +332,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
       children: [
         for (var i = 0; i < _quickSizes.length; i++)
           _choiceChip(
-            label:
-                '${_quickSizes[i].label} · ${(_quickSizes[i].widthCm / 100).toStringAsFixed(1)}×${(_quickSizes[i].lengthCm / 100).toStringAsFixed(1)}',
+            label: _quickSizes[i].label,
             selected: _selectedQuickSize == i && !_customSize,
             onTap: () => _pickQuickSize(i),
           ),

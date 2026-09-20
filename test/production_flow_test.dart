@@ -231,4 +231,27 @@ void main() {
     expect(repo.state.item(id)!.confirmedPrice, isNull);
     expect(repo.state.order(order.id)!.status, OrderStatus.inProduction);
   });
+
+  test('odstranitev kosa prešteje ostale in ne dovoli zadnjega', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 3,
+    );
+
+    repo.removeItemFromOrder('${order.id}-2');
+
+    final remaining = repo.state.itemsOf(order.id);
+    expect(remaining.length, 2);
+    expect(remaining.map((i) => i.id), ['${order.id}-1', '${order.id}-3']);
+    expect(remaining.every((i) => i.ofTotal == 2), isTrue);
+    expect(repo.state.order(order.id)!.itemCount, 2);
+
+    repo.removeItemFromOrder('${order.id}-1');
+    expect(() => repo.removeItemFromOrder('${order.id}-3'),
+        throwsA(isA<StateError>()));
+    expect(repo.state.itemsOf(order.id).length, 1);
+  });
 }

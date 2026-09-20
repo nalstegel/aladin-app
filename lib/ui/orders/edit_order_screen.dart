@@ -12,7 +12,7 @@ import '../widgets/common.dart';
 import '../widgets/pickup_window_picker.dart';
 
 /// Urejanje podatkov obstoječega naročila (stranka, kanal, termini,
-/// opomba). Poslovalnica se ne spreminja — določila je predpono ID-ja ob
+/// opomba). Območje se ne spreminja — določilo je predpono ID-ja ob
 /// ustvarjanju in bi sprememba naredila neskladje z že natisnjenimi
 /// etiketami. Število kosov ima svojo pot (gumb "Dodaj kos" na naročilu).
 class EditOrderScreen extends ConsumerStatefulWidget {
@@ -73,14 +73,14 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
-          const SectionHeader('Poslovalnica'),
+          const SectionHeader('Območje'),
           AppCard(
-            child: DetailRow('Poslovalnica', _original.location.label),
+            child: DetailRow('Območje', _original.location.label),
           ),
           const Padding(
             padding: EdgeInsets.only(top: 4, left: 4),
             child: Text(
-              'Poslovalnice po ustvarjanju naročila ni mogoče spremeniti.',
+              'Območja po ustvarjanju naročila ni mogoče spremeniti.',
               style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
           ),

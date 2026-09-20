@@ -41,6 +41,13 @@ class AladinApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      // Tapping anywhere outside the focused field closes the keyboard —
+      // brez tega ostane odprta čez gumb "Shrani", ki pade pod tipkovnico.
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
       home: const _AuthGate(),
     );
   }

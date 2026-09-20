@@ -165,7 +165,7 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
           onSelectionChanged: (s) => setState(() => _channel = s.first),
         ),
         const SizedBox(height: 12),
-        const Text('Poslovalnica', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+        const Text('Območje', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         SegmentedButton<OrderLocation>(
           segments: [
@@ -385,7 +385,7 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
       itemCount: _itemCount,
       pickupAt: pickupAt,
       pickupWindowEnd: pickupWindowEnd,
-      dueAt: DateTime.now().add(const Duration(days: 3)),
+      dueAt: DateTime.now().add(const Duration(days: 7)),
     );
 
     final orderId = order.id;

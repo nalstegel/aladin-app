@@ -644,6 +644,24 @@ scoped to that location:
   manual test sessions that genuinely used that numbering at the time —
   left as accurate history, not updated to the new scheme.
 
+### 4.8 — Third location: Celje (CE-...) + "Poslovalnica" → "Območje" — DONE (2026-09-20)
+Added a third pickup location alongside Ljubljana/Maribor, and renamed the
+user-facing label from "Poslovalnica" to "Območje" everywhere it appears
+(quick order card, "Novo naročilo", "Uredi naročilo").
+- `lib/models/enums.dart` — `OrderLocation` gained `celje`, with
+  `.label` "Celje" and `.code` "CE". `buildOrderId`/the QR-etiquette path
+  needed no changes since they already key off `.code` generically (e.g.
+  `CE-001-1`).
+- `AppState` gained `nextOrderSeqCelje` (mirrors the Ljubljana/Maribor
+  counters) — threaded through `Repository.createOrder`,
+  `FirestoreStore.load/watch/save` (`meta/counters` doc), and
+  `seed.dart` (seeded at 1). Old counter docs without this field default
+  to 1, same pattern as the original LJ/MB rollout in §4.7.
+- The "Poslovalnica"/"Območje" toggles in `quick_order_card.dart` and
+  `new_order_screen.dart` already looped over `OrderLocation.values`, so
+  Celje shows up there with no extra UI code — only the section label
+  text needed renaming.
+
 ## 5. How to resume work in a fresh session
 
 1. Read this file fully.

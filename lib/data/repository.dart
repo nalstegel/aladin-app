@@ -270,6 +270,7 @@ class Repository extends StateNotifier<AppState> {
       nextOrderSeqLjubljana:
           location == OrderLocation.ljubljana ? seq + 1 : null,
       nextOrderSeqMaribor: location == OrderLocation.maribor ? seq + 1 : null,
+      nextOrderSeqCelje: location == OrderLocation.celje ? seq + 1 : null,
     ));
     return order;
   }
@@ -323,6 +324,40 @@ class Repository extends StateNotifier<AppState> {
       orderId,
     ));
     return fresh;
+  }
+
+  /// Odstrani kos iz naročila (npr. napačno štetje ob sprejemu).
+  ///
+  /// ID-ji preostalih kosov ostanejo nespremenjeni — že natisnjena QR
+  /// etiketa se ne sme premakniti na drug kos — spremeni se le `ofTotal`,
+  /// da nalepke in napredek spet kažejo pravilno skupno število.
+  void removeItemFromOrder(String itemId) {
+    final item = state.item(itemId);
+    if (item == null) return;
+    final order = state.order(item.orderId);
+    if (order == null) return;
+
+    final remaining =
+        state.itemsOf(item.orderId).where((i) => i.id != itemId).toList();
+    if (remaining.isEmpty) {
+      throw StateError('Naročilo mora imeti vsaj en kos.');
+    }
+    final total = remaining.length;
+    final renumbered =
+        remaining.map((i) => i.copyWith(ofTotal: total)).toList();
+
+    final items = [
+      ...state.items.where((i) => i.orderId != item.orderId),
+      ...renumbered,
+    ];
+    final orders = [...state.orders];
+    final oi = orders.indexWhere((o) => o.id == item.orderId);
+    orders[oi] = order.copyWith(itemCount: total);
+
+    _commit(_recompute(
+      state.copyWith(items: items, orders: orders),
+      item.orderId,
+    ));
   }
 
   /// Preproge smo pobrali pri stranki — vse čakajo na pranje.
@@ -584,6 +619,14 @@ class Repository extends StateNotifier<AppState> {
     return t;
   }
 
+  /// Kosi ob izmeri prevzamejo ime in ceno vrste v svoja polja, zato brisanje
+  /// šifranta ne spremeni že obračunanih kosov.
+  void deleteRugType(String id) {
+    _commit(state.copyWith(
+      rugTypes: state.rugTypes.where((t) => t.id != id).toList(),
+    ));
+  }
+
   void upsertExtraTemplate(ExtraTemplate template) {
     final list = [...state.extraTemplates];
     final i = list.indexWhere((t) => t.id == template.id);
@@ -600,6 +643,14 @@ class Repository extends StateNotifier<AppState> {
         ExtraTemplate(id: _uuid.v4(), name: name, kind: kind, value: value);
     upsertExtraTemplate(t);
     return t;
+  }
+
+  /// Kosi ob obračunu prevzamejo doplačilo v svoja polja, zato brisanje
+  /// šifranta ne spremeni že obračunanih kosov.
+  void deleteExtraTemplate(String id) {
+    _commit(state.copyWith(
+      extraTemplates: state.extraTemplates.where((t) => t.id != id).toList(),
+    ));
   }
 
   // --------------------------------------------------------------- razvojno
