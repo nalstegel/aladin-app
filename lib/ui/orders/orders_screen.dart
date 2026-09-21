@@ -2,42 +2,69 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme.dart';
-import '../../data/navigation.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../../models/order.dart';
+import '../../models/rug_item.dart';
 import '../widgets/common.dart';
 import 'new_order_screen.dart';
 import 'order_card.dart';
 
 /// Filter nad seznamom naročil. Kanal ni več zavihek — naročila vseh treh
-/// poti so v istem seznamu, kanal pa je oznaka na kartici.
+/// poti so v istem seznamu, kanal pa je oznaka na kartici. Faza (korak
+/// proizvodnje) ni več ločen filter, ker to zdaj predstavljajo zavihki.
 class OrderFilter {
-  const OrderFilter({this.channel, this.step});
+  const OrderFilter({this.channel});
 
   final OrderChannel? channel;
 
-  /// Naročila, ki imajo vsaj en kos v tem koraku. Tako delavec najde, kje je
-  /// še kaj za postoriti, tudi če je naročilo kot celota drugje.
-  final RugStatus? step;
-
-  bool get isEmpty => channel == null && step == null;
-  int get count => (channel == null ? 0 : 1) + (step == null ? 0 : 1);
+  bool get isEmpty => channel == null;
+  int get count => channel == null ? 0 : 1;
 
   OrderFilter copyWith({
     OrderChannel? channel,
-    RugStatus? step,
     bool clearChannel = false,
-    bool clearStep = false,
   }) =>
       OrderFilter(
         channel: clearChannel ? null : (channel ?? this.channel),
-        step: clearStep ? null : (step ?? this.step),
       );
 }
 
 final orderFilterProvider =
     StateProvider<OrderFilter>((ref) => const OrderFilter());
+
+/// Štirje zavihki so dejanski koraki proizvodnje (glej README/plan.md):
+/// naročilo se avtomatsko premakne naprej, ko delavec naredi ustrezno akcijo.
+/// Zaključena naročila tu niso več prikazana — najdeš jih v zgodovini
+/// posamezne stranke.
+enum OrderPhase { intake, washing, drying, ready }
+
+extension OrderPhaseX on OrderPhase {
+  String get label => switch (this) {
+        OrderPhase.intake => 'Naročila',
+        OrderPhase.washing => 'Čaka pranje',
+        OrderPhase.drying => 'Sušenje',
+        OrderPhase.ready => 'Pripravljeno',
+      };
+
+  /// Naročilo je v tem zavihku, če mu status/kosi ustrezajo. Prvi zavihek je
+  /// izključujoč (še noben kos se ni premaknil), ostali trije so "ima vsaj en
+  /// kos v tem koraku" — tako se isto naročilo lahko pokaže v več zavihkih
+  /// hkrati, dokler ni vsak kos šel naprej.
+  bool matches(WorkOrder order, List<RugItem> items) {
+    switch (this) {
+      case OrderPhase.intake:
+        return order.status == OrderStatus.scheduledPickup;
+      case OrderPhase.washing:
+        return items.any((i) => i.status == RugStatus.awaitingWash);
+      case OrderPhase.drying:
+        return items.any((i) =>
+            i.status == RugStatus.drying || i.status == RugStatus.finishing);
+      case OrderPhase.ready:
+        return items.any((i) => i.status == RugStatus.ready);
+    }
+  }
+}
 
 class OrdersScreen extends ConsumerStatefulWidget {
   const OrdersScreen({super.key});
@@ -48,17 +75,11 @@ class OrdersScreen extends ConsumerStatefulWidget {
 
 class _OrdersScreenState extends ConsumerState<OrdersScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this)
-    ..addListener(_syncProvider);
-
-  void _syncProvider() {
-    if (_tabs.indexIsChanging) return;
-    ref.read(ordersTabProvider.notifier).state = _tabs.index;
-  }
+  late final TabController _tabs =
+      TabController(length: OrderPhase.values.length, vsync: this);
 
   @override
   void dispose() {
-    _tabs.removeListener(_syncProvider);
     _tabs.dispose();
     super.dispose();
   }
@@ -66,12 +87,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(orderFilterProvider);
-
-    // Meni Več lahko skoči naravnost na "Zaključena" — zato zavihek sledi
-    // providerju, namesto da bi isti seznam obstajal še enkrat drugje.
-    ref.listen(ordersTabProvider, (_, next) {
-      if (next != _tabs.index) _tabs.animateTo(next);
-    });
 
     return Scaffold(
       body: SafeArea(
@@ -118,22 +133,25 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             ),
             TabBar(
               controller: _tabs,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
               labelColor: AppColors.primary,
               unselectedLabelColor: AppColors.textMuted,
               indicatorColor: AppColors.primary,
-              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorSize: TabBarIndicatorSize.label,
               dividerColor: AppColors.border,
               labelStyle:
                   const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-              tabs: const [Tab(text: 'Aktivna'), Tab(text: 'Zaključena')],
+              tabs: [
+                for (final p in OrderPhase.values) Tab(text: p.label),
+              ],
             ),
             if (!filter.isEmpty) _activeFilterBar(filter),
             Expanded(
               child: TabBarView(
                 controller: _tabs,
-                children: const [
-                  _OrderList(active: true),
-                  _OrderList(active: false),
+                children: [
+                  for (final p in OrderPhase.values) _OrderList(phase: p),
                 ],
               ),
             ),
@@ -169,13 +187,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                     AppColors.forChannel(filter.channel!),
                     () => ref.read(orderFilterProvider.notifier).state =
                         filter.copyWith(clearChannel: true),
-                  ),
-                if (filter.step != null)
-                  _removableChip(
-                    filter.step!.label,
-                    AppColors.forRug(filter.step!),
-                    () => ref.read(orderFilterProvider.notifier).state =
-                        filter.copyWith(clearStep: true),
                   ),
               ],
             ),
@@ -280,30 +291,6 @@ class _FilterSheet extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Ima kos v koraku',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilterPill(
-                  label: 'Vse',
-                  selected: filter.step == null,
-                  onTap: () => set(filter.copyWith(clearStep: true)),
-                ),
-                for (final s in RugStatus.values)
-                  if (s != RugStatus.returned)
-                    FilterPill(
-                      label: s.label,
-                      selected: filter.step == s,
-                      onTap: () => set(filter.copyWith(step: s)),
-                    ),
-              ],
-            ),
-            const SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
@@ -329,9 +316,9 @@ class _FilterSheet extends ConsumerWidget {
 }
 
 class _OrderList extends ConsumerWidget {
-  const _OrderList({required this.active});
+  const _OrderList({required this.phase});
 
-  final bool active;
+  final OrderPhase phase;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -339,25 +326,23 @@ class _OrderList extends ConsumerWidget {
     final filter = ref.watch(orderFilterProvider);
 
     var list = state.orders
-        .where((o) => o.status.isOpen == active)
+        .where((o) => o.status.isOpen)
         .where((o) => filter.channel == null || o.channel == filter.channel)
-        .where((o) =>
-            filter.step == null ||
-            state.itemsOf(o.id).any((i) => i.status == filter.step))
+        .where((o) => phase.matches(o, state.itemsOf(o.id)))
         .toList();
 
-    list.sort(active ? _byUrgency : _byRecent);
+    list.sort(_byUrgency);
 
     if (list.isEmpty) {
       return EmptyState(
         icon: filter.isEmpty
             ? Icons.receipt_long_outlined
             : Icons.filter_alt_off_outlined,
-        title: filter.isEmpty
-            ? (active ? 'Ni aktivnih naročil' : 'Zgodovina je prazna')
-            : 'Filtru ne ustreza nobeno naročilo',
+        title: filter.isEmpty ? _emptyTitle : 'Filtru ne ustreza nobeno naročilo',
         message: filter.isEmpty
-            ? (active ? 'Novo naročilo dodaš z gumbom spodaj desno.' : null)
+            ? (phase == OrderPhase.intake
+                ? 'Novo naročilo dodaš z gumbom spodaj desno.'
+                : null)
             : 'Poskusi s širšim filtrom.',
       );
     }
@@ -369,6 +354,13 @@ class _OrderList extends ConsumerWidget {
       itemBuilder: (_, i) => OrderCard(list[i]),
     );
   }
+
+  String get _emptyTitle => switch (phase) {
+        OrderPhase.intake => 'Ni novih naročil',
+        OrderPhase.washing => 'Nič ne čaka na pranje',
+        OrderPhase.drying => 'Nič ni trenutno v sušenju',
+        OrderPhase.ready => 'Nič ni pripravljeno',
+      };
 
   static int _byUrgency(WorkOrder a, WorkOrder b) {
     // Pripravljena naročila na vrh — nekdo jih čaka.
@@ -383,7 +375,4 @@ class _OrderList extends ConsumerWidget {
     if (bd == null) return -1;
     return ad.compareTo(bd);
   }
-
-  static int _byRecent(WorkOrder a, WorkOrder b) =>
-      (b.completedAt ?? b.createdAt).compareTo(a.completedAt ?? a.createdAt);
 }

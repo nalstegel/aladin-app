@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/address.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/customer.dart';
 import '../../models/enums.dart';
-import '../customers/customer_form.dart';
 import '../widgets/common.dart';
 import '../widgets/pickup_window_picker.dart';
 import 'labels_screen.dart';
@@ -42,6 +42,20 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
   DateTime? _dueAt;
   final _search = TextEditingController();
   final _notes = TextEditingController();
+  bool _showAllCustomers = false;
+
+  // Nova stranka je vgrajena neposredno v ta obrazec (ne ločen zaslon), da
+  // delavcu ni treba zapustiti sprejema naročila.
+  bool _addingCustomer = false;
+  final _newName = TextEditingController();
+  final _newPhone = TextEditingController();
+  final _newEmail = TextEditingController();
+  final _newAddress = TextEditingController();
+  final _newPostal = TextEditingController(text: '1000');
+  final _newCity = TextEditingController(text: 'Ljubljana');
+  final _newTaxId = TextEditingController();
+  final _newContact = TextEditingController();
+  bool _linkingNewAddress = false;
 
   static HandoverMode _defaultHandover(OrderChannel c) =>
       c == OrderChannel.dropoff
@@ -53,12 +67,40 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
     super.initState();
     _customer = widget.presetCustomer;
     _dueAt = DateTime.now().add(const Duration(days: 7));
+    _newPostal.addListener(_onNewPostalChanged);
+    _newCity.addListener(_onNewCityChanged);
+  }
+
+  void _onNewPostalChanged() {
+    if (_linkingNewAddress) return;
+    final city = cityForPostalCode(_newPostal.text);
+    if (city == null || _newCity.text.trim().isNotEmpty) return;
+    _linkingNewAddress = true;
+    _newCity.text = city;
+    _linkingNewAddress = false;
+  }
+
+  void _onNewCityChanged() {
+    if (_linkingNewAddress) return;
+    final postal = postalCodeForCity(_newCity.text);
+    if (postal == null || _newPostal.text.trim().isNotEmpty) return;
+    _linkingNewAddress = true;
+    _newPostal.text = postal;
+    _linkingNewAddress = false;
   }
 
   @override
   void dispose() {
     _search.dispose();
     _notes.dispose();
+    _newName.dispose();
+    _newPhone.dispose();
+    _newEmail.dispose();
+    _newAddress.dispose();
+    _newPostal.dispose();
+    _newCity.dispose();
+    _newTaxId.dispose();
+    _newContact.dispose();
     super.dispose();
   }
 
@@ -67,6 +109,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Novo naročilo')),
       body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
           const SectionHeader('Območje'),
@@ -185,17 +228,22 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
       );
     }
 
+    if (_addingCustomer) {
+      return AppCard(child: _newCustomerForm());
+    }
+
     final query = _search.text.trim().toLowerCase();
     final all = ref.watch(repositoryProvider).customers;
     final wantCompany = _channel == OrderChannel.b2b;
-    final matches = all
+    final filtered = all
         .where((c) => c.isCompany == wantCompany)
         .where((c) =>
             query.isEmpty ||
             c.name.toLowerCase().contains(query) ||
             c.phone.replaceAll(' ', '').contains(query.replaceAll(' ', '')))
-        .take(6)
         .toList();
+    final showList = query.isNotEmpty || _showAllCustomers;
+    final matches = showList ? filtered : const <Customer>[];
 
     return Column(
       children: [
@@ -210,6 +258,16 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        if (!showList && filtered.isNotEmpty) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => setState(() => _showAllCustomers = true),
+              child: Text('Prikaži vse (${filtered.length})'),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
         for (final c in matches) ...[
           AppCard(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -253,7 +311,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
         ],
         const SizedBox(height: 4),
         OutlinedButton.icon(
-          onPressed: _newCustomer,
+          onPressed: _startAddingCustomer,
           icon: const Icon(Icons.person_add_alt),
           label: Text(wantCompany ? 'Novo podjetje' : 'Nova stranka'),
         ),
@@ -261,19 +319,136 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
     );
   }
 
-  Future<void> _newCustomer() async {
-    final created = await Navigator.push<Customer>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CustomerFormScreen(
-          initialType: _channel == OrderChannel.b2b
-              ? CustomerType.company
-              : CustomerType.private,
-          initialName: _search.text.trim(),
+  void _startAddingCustomer() {
+    setState(() {
+      _addingCustomer = true;
+      _newName.text = _search.text.trim();
+    });
+  }
+
+  void _cancelAddingCustomer() {
+    setState(() => _addingCustomer = false);
+  }
+
+  Widget _newCustomerForm() {
+    final wantCompany = _channel == OrderChannel.b2b;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          wantCompany ? 'Novo podjetje' : 'Nova stranka',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
-      ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _newName,
+          textCapitalization: TextCapitalization.words,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            labelText: wantCompany ? 'Naziv podjetja' : 'Ime in priimek',
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _newPhone,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(labelText: 'Telefon'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _newEmail,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: 'E-pošta'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _newAddress,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Ulica in hišna št.'),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            SizedBox(
+              width: 110,
+              child: TextField(
+                controller: _newPostal,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Pošta'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _newCity,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Kraj'),
+              ),
+            ),
+          ],
+        ),
+        if (wantCompany) ...[
+          const SizedBox(height: 10),
+          TextField(
+            controller: _newTaxId,
+            decoration: const InputDecoration(labelText: 'Davčna številka'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _newContact,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(labelText: 'Kontaktna oseba'),
+          ),
+        ],
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _cancelAddingCustomer,
+                child: const Text('Prekliči'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton(
+                onPressed:
+                    _newName.text.trim().isEmpty ? null : _saveNewCustomer,
+                child: const Text('Shrani stranko'),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
-    if (created != null) setState(() => _customer = created);
+  }
+
+  void _saveNewCustomer() {
+    final repo = ref.read(repositoryProvider.notifier);
+    final wantCompany = _channel == OrderChannel.b2b;
+    final created = repo.createCustomer(
+      type: wantCompany ? CustomerType.company : CustomerType.private,
+      name: _newName.text,
+      phone: _newPhone.text,
+      email: _newEmail.text,
+      address: _newAddress.text,
+      city: _newCity.text,
+      postalCode: _newPostal.text,
+      taxId: _newTaxId.text,
+      contactPerson: _newContact.text,
+    );
+    setState(() {
+      _customer = created;
+      _addingCustomer = false;
+      _newName.clear();
+      _newPhone.clear();
+      _newEmail.clear();
+      _newAddress.clear();
+      _newPostal.text = '1000';
+      _newCity.text = 'Ljubljana';
+      _newTaxId.clear();
+      _newContact.clear();
+    });
   }
 
   Widget _counter() {

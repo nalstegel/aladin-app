@@ -41,6 +41,11 @@ If `flutter analyze` crashes with a `FormatException`, the project path likely
 contains a curly apostrophe (e.g. an iCloud `Desktop - Nal's MacBook Air` folder);
 `dart analyze` gives the same result without crashing.
 
+**Never boot a simulator/emulator or run `flutter run` yourself** to visually verify
+UI changes — the owner checks those manually. Rely on `flutter analyze`/`flutter
+test` and code review instead; if visual verification is genuinely needed, ask
+first.
+
 Release builds (Android only, signed + minified):
 ```bash
 ./tool/release_android.sh "opis sprememb"   # builds arm64 release, uploads to Firebase App Distribution

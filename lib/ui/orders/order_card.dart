@@ -32,13 +32,15 @@ class OrderCard extends ConsumerWidget {
     final items = state.itemsOf(order.id);
     final progress = StageProgress.of(items);
     final overdue = order.isOverdue(DateTime.now());
-    final accent = overdue
-        ? AppColors.danger
-        : AppColors.forOrder(order.status);
+    // Naročilo, ki še ni bilo prevzeto v delavnico, je vedno "za akcijo" —
+    // ne glede na rok — zato ima enak opozorilni videz kot zamujeno.
+    final pendingIntake = order.status == OrderStatus.scheduledPickup;
+    final flagged = overdue || pendingIntake;
+    final accent = flagged ? AppColors.danger : AppColors.forOrder(order.status);
 
     return AppCard(
       accent: accent,
-      borderColor: overdue ? AppColors.danger.withValues(alpha: 0.4) : null,
+      borderColor: flagged ? AppColors.danger.withValues(alpha: 0.4) : null,
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -85,9 +87,9 @@ class OrderCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Icon(
-                overdue ? Icons.warning_amber_rounded : Icons.inventory_2_outlined,
+                flagged ? Icons.warning_amber_rounded : Icons.inventory_2_outlined,
                 size: 15,
-                color: overdue ? AppColors.danger : AppColors.textMuted,
+                color: flagged ? AppColors.danger : AppColors.textMuted,
               ),
               const SizedBox(width: 6),
               Text(
@@ -95,7 +97,7 @@ class OrderCard extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: overdue ? AppColors.danger : AppColors.textMuted,
+                  color: flagged ? AppColors.danger : AppColors.textMuted,
                 ),
               ),
               const SizedBox(width: 10),
@@ -135,6 +137,16 @@ class OrderCard extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ] else if (pendingIntake) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Čaka prevzem v delavnici.',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.danger,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ],
       ),
@@ -161,8 +173,16 @@ class OrderCard extends ConsumerWidget {
     switch (order.status) {
       case OrderStatus.scheduledPickup:
         icon = Icons.schedule;
-        text = '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)} · '
-            '${order.customerAddress}';
+        if (order.pickupAt != null) {
+          // Dostava ima dogovorjen termin, za katerega delavec še gre ven.
+          text = '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)} · '
+              '${order.customerAddress}';
+        } else {
+          // Brez termina (npr. Pripeljano) je pomembnejši rok naročila.
+          text = order.dueAt == null
+              ? 'Sprejeto ${Fmt.dateShort(order.createdAt)}'
+              : 'Rok ${Fmt.dayHeader(order.dueAt!)}';
+        }
       case OrderStatus.awaitingDelivery:
         icon = Icons.schedule;
         text = order.deliveryAt == null
