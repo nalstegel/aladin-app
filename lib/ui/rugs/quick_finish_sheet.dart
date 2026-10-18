@@ -6,18 +6,24 @@ import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/catalog.dart';
+import '../../models/enums.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
 
-/// Hitre gumbe za površino (v3 spec §4: "1 m²", "2 m²", "3 m²") — vsak
-/// gumb je natanko ta površina (širina×dolžina je le interna predstavitev,
-/// dejanske mere se ne prikazujejo). "Drugo" ostane edina pot za ročni vnos
-/// dejanskih mer kosa.
+/// Hitre mere. Prve tri so gumbi za površino (v3 spec §4: "1 m²", "2 m²",
+/// "3 m²") za steze / tekoče metre — širina×dolžina je tam le interna
+/// predstavitev. Ostale so standardne mere preprog (QA v4 §4). "Drugo" ostane
+/// edina pot za ročni vnos dejanskih mer kosa.
 const _quickSizes = [
   (label: '1 m²', widthCm: 100.0, lengthCm: 100.0),
   (label: '2 m²', widthCm: 100.0, lengthCm: 200.0),
   (label: '3 m²', widthCm: 100.0, lengthCm: 300.0),
+  (label: '1,2 × 1,7', widthCm: 120.0, lengthCm: 170.0),
+  (label: '2,3 × 1,7', widthCm: 230.0, lengthCm: 170.0),
+  (label: '3 × 2', widthCm: 300.0, lengthCm: 200.0),
+  (label: '3,5 × 2,5', widthCm: 350.0, lengthCm: 250.0),
 ];
+const _areaSizeCount = 3;
 
 /// Hitri obračun kosa (v3 spec §3/§4): vrsta, mere, doplačila, cena — vse na
 /// enem zaslonu, naravnost iz Sušenja v Pripravljeno. Nadomešča ločena
@@ -56,7 +62,10 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
   String? _typeId;
   int? _selectedQuickSize;
   bool _customSize = false;
-  final _selected = <String>{};
+
+  /// Izbrana doplačila: ID predloge → vrednost (pri postavkah z izbiro, npr.
+  /// "Dlake" 5 € / 10 €, tista, ki jo je izbral delavec).
+  final _selected = <String, double>{};
   late double _discount;
   bool _useOverride = false;
 
@@ -85,7 +94,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
 
     for (final e in widget.item.extras) {
       final match = state.extraTemplates.where((t) => t.name == e.name);
-      if (match.isNotEmpty) _selected.add(match.first.id);
+      if (match.isNotEmpty) _selected[match.first.id] = e.value;
     }
   }
 
@@ -119,10 +128,11 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
     final templates = state.extraTemplates.where((t) => t.active).toList();
     final type = _typeId == null ? null : state.rugType(_typeId!);
 
-    final chosen = templates
-        .where((t) => _selected.contains(t.id))
-        .map(AppliedExtra.fromTemplate)
-        .toList();
+    final chosen = [
+      for (final t in templates)
+        if (_selected.containsKey(t.id))
+          AppliedExtra.fromTemplate(t, value: _selected[t.id]),
+    ];
 
     final preview = widget.item.copyWith(
       widthCm: double.tryParse(_width.text.replaceAll(',', '.')),
@@ -143,7 +153,9 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
     final valid = _m2 > 0 && type != null;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.92,
@@ -179,9 +191,13 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
                   Expanded(child: _numField(_width, 'Širina (cm)')),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 10),
-                    child: Text('×',
-                        style:
-                            TextStyle(fontSize: 20, color: AppColors.textMuted)),
+                    child: Text(
+                      '×',
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                   ),
                   Expanded(child: _numField(_length, 'Dolžina (cm)')),
                 ],
@@ -189,7 +205,12 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
             ],
             const SizedBox(height: 6),
             Text(
-              _m2 == 0 ? 'Površina: —' : 'Površina: ${Fmt.m2(_m2)}',
+              _m2 == 0
+                  ? 'Površina: —'
+                  : (_selectedQuickSize != null &&
+                            _selectedQuickSize! < _areaSizeCount
+                        ? 'Površina: ${Fmt.m2(_m2)}'
+                        : 'Mere: ${Fmt.dimensions(double.tryParse(_width.text.replaceAll(',', '.')), double.tryParse(_length.text.replaceAll(',', '.')))} · ${Fmt.m2(_m2)}'),
               style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
             const SectionHeader('Doplačila'),
@@ -198,18 +219,26 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
             Row(
               children: [
                 const Expanded(
-                  child: Text('Dodatni popust na kos', style: TextStyle(fontSize: 14)),
+                  child: Text(
+                    'Dodatni popust na kos',
+                    style: TextStyle(fontSize: 14),
+                  ),
                 ),
                 SizedBox(
                   width: 90,
                   child: TextFormField(
-                    initialValue: _discount == 0 ? '' : _discount.toStringAsFixed(0),
+                    initialValue: _discount == 0
+                        ? ''
+                        : _discount.toStringAsFixed(0),
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.right,
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                     ],
-                    decoration: const InputDecoration(suffixText: '%', isDense: true),
+                    decoration: const InputDecoration(
+                      suffixText: '%',
+                      isDense: true,
+                    ),
                     onChanged: (v) => setState(() {
                       _discount = double.tryParse(v.replaceAll(',', '.')) ?? 0;
                     }),
@@ -226,13 +255,18 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
                     type == null
                         ? 'Osnova'
                         : 'Osnova (${Fmt.m2(preview.chargeableM2)} × '
-                            '${type.pricePerM2.toStringAsFixed(0)} €)',
+                              '${type.pricePerM2.toStringAsFixed(0)} €)',
                     Fmt.money(preview.basePrice),
                   ),
                   for (final e in chosen)
                     DetailRow(
                       e.name,
-                      Fmt.money(e.amount(base: preview.basePrice, m2: preview.chargeableM2)),
+                      Fmt.money(
+                        e.amount(
+                          base: preview.basePrice,
+                          m2: preview.chargeableM2,
+                        ),
+                      ),
                     ),
                   if (_discount > 0)
                     DetailRow(
@@ -257,12 +291,19 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
                 child: Row(
                   children: [
                     Icon(
-                      _useOverride ? Icons.check_box : Icons.check_box_outline_blank,
+                      _useOverride
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
                       size: 20,
-                      color: _useOverride ? AppColors.primary : AppColors.textMuted,
+                      color: _useOverride
+                          ? AppColors.primary
+                          : AppColors.textMuted,
                     ),
                     const SizedBox(width: 8),
-                    const Text('Ročno določim končno ceno', style: TextStyle(fontSize: 13)),
+                    const Text(
+                      'Ročno določim končno ceno',
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ],
                 ),
               ),
@@ -270,23 +311,37 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
             if (_useOverride)
               TextField(
                 controller: _override,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                 ],
                 onChanged: (_) => setState(() {}),
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                decoration: const InputDecoration(labelText: 'Končna cena', suffixText: '€'),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Končna cena',
+                  suffixText: '€',
+                ),
               ),
             const SizedBox(height: 18),
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: AppColors.ready),
               onPressed: valid
                   ? () {
-                      ref.read(repositoryProvider.notifier).finishRugFromDrying(
+                      ref
+                          .read(repositoryProvider.notifier)
+                          .finishRugFromDrying(
                             widget.item.id,
-                            widthCm: double.tryParse(_width.text.replaceAll(',', '.')),
-                            lengthCm: double.tryParse(_length.text.replaceAll(',', '.')),
+                            widthCm: double.tryParse(
+                              _width.text.replaceAll(',', '.'),
+                            ),
+                            lengthCm: double.tryParse(
+                              _length.text.replaceAll(',', '.'),
+                            ),
                             rugType: type,
                             extras: chosen,
                             discountPercent: _discount,
@@ -305,15 +360,28 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
     );
   }
 
-  /// 2 gumba v vrsto, kot v predlogi — kompaktno, brez dodatnih opisov.
-  Widget _typeGrid(List<RugType> types) {
+  /// 2 gumba v vrsto, kot v predlogi — kompaktno, da je čim več možnosti
+  /// vidnih brez drsenja (QA v4 §4).
+  Widget _grid({
+    required int columns,
+    required double aspectRatio,
+    required List<Widget> children,
+  }) {
     return GridView.count(
-      crossAxisCount: 2,
+      crossAxisCount: columns,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 3.2,
+      mainAxisSpacing: 6,
+      crossAxisSpacing: 6,
+      childAspectRatio: aspectRatio,
+      children: children,
+    );
+  }
+
+  Widget _typeGrid(List<RugType> types) {
+    return _grid(
+      columns: 2,
+      aspectRatio: 4.2,
       children: [
         for (final t in types)
           _choiceButton(
@@ -325,18 +393,20 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
     );
   }
 
+  /// Mere so kratke oznake, zato 4 v vrsto: najprej 1/2/3 m² in Drugo, nato
+  /// standardne mere preprog.
   Widget _sizeGrid() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    Widget size(int i) => _choiceButton(
+      label: _quickSizes[i].label,
+      selected: _selectedQuickSize == i && !_customSize,
+      onTap: () => _pickQuickSize(i),
+    );
+    return _grid(
+      columns: 4,
+      aspectRatio: 2.1,
       children: [
-        for (var i = 0; i < _quickSizes.length; i++)
-          _choiceChip(
-            label: _quickSizes[i].label,
-            selected: _selectedQuickSize == i && !_customSize,
-            onTap: () => _pickQuickSize(i),
-          ),
-        _choiceChip(
+        for (var i = 0; i < _areaSizeCount; i++) size(i),
+        _choiceButton(
           label: 'Drugo',
           selected: _customSize,
           onTap: () => setState(() {
@@ -344,33 +414,110 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
             _selectedQuickSize = null;
           }),
         ),
+        for (var i = _areaSizeCount; i < _quickSizes.length; i++) size(i),
       ],
     );
   }
 
   Widget _extrasGrid(List<ExtraTemplate> templates, RugItem preview) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: 2.6,
+    return _grid(
+      columns: 2,
+      aspectRatio: 4.2,
       children: [
         for (final t in templates)
           _choiceButton(
-            label: t.name,
-            selected: _selected.contains(t.id),
-            onTap: () => setState(() {
-              if (_selected.contains(t.id)) {
-                _selected.remove(t.id);
-              } else {
-                _selected.add(t.id);
-              }
-            }),
+            label: _selected.containsKey(t.id) && t.hasChoices
+                ? '${t.name} · ${_formatValue(_selected[t.id]!, t)}'
+                : t.name,
+            selected: _selected.containsKey(t.id),
+            onTap: () => _toggleExtra(t),
           ),
       ],
     );
+  }
+
+  Future<void> _toggleExtra(ExtraTemplate t) async {
+    if (!t.hasChoices) {
+      setState(
+        () => _selected.containsKey(t.id)
+            ? _selected.remove(t.id)
+            : _selected[t.id] = t.value,
+      );
+      return;
+    }
+    // Postavka z izbiro (npr. Dlake 5 € / 10 €): delavec izbere znesek.
+    final picked = await showModalBottomSheet<double>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                t.name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (final v in t.choices) ...[
+                    if (v != t.choices.first) const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 52),
+                          backgroundColor: _selected[t.id] == v
+                              ? AppColors.primary
+                              : AppColors.primary.withValues(alpha: 0.75),
+                        ),
+                        onPressed: () => Navigator.pop(context, v),
+                        child: Text(
+                          _formatValue(v, t),
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              if (_selected.containsKey(t.id))
+                TextButton(
+                  onPressed: () => Navigator.pop(context, 0.0),
+                  child: const Text('Odstrani'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (picked == 0) {
+        _selected.remove(t.id);
+      } else {
+        _selected[t.id] = picked;
+      }
+    });
+  }
+
+  static String _formatValue(double v, ExtraTemplate t) {
+    final n = v.abs() == v.abs().roundToDouble()
+        ? v.abs().toStringAsFixed(0)
+        : v.abs().toStringAsFixed(2).replaceAll('.', ',');
+    return '$n ${t.kind.label}';
   }
 
   Widget _choiceButton({
@@ -386,7 +533,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
         onTap: onTap,
         child: Container(
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
@@ -409,25 +556,11 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
     );
   }
 
-  Widget _choiceChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-    );
-  }
-
   Widget _numField(TextEditingController c, String label) {
     return TextField(
       controller: c,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-      ],
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
       onChanged: (_) => setState(() {}),
       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
       decoration: InputDecoration(labelText: label),

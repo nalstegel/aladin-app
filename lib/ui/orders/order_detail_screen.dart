@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
+import '../../core/launch.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../data/repository.dart';
@@ -67,27 +68,40 @@ class OrderDetailScreen extends ConsumerWidget {
           AppCard(
             child: Column(
               children: [
-                DetailRow('Stranka', order.customerName),
+                _InfoRow('Stranka', order.customerName),
                 if (order.customerPhone.isNotEmpty)
-                  DetailRow('Telefon', order.customerPhone),
+                  _InfoRow(
+                    'Telefon',
+                    Fmt.phone(order.customerPhone),
+                    icon: Icons.call,
+                    onTap: () => _launch(
+                      context,
+                      callPhone(order.customerPhone),
+                      'Klica ni bilo mogoče začeti.',
+                    ),
+                  ),
                 if (order.customerAddress.isNotEmpty)
-                  DetailRow(
+                  _InfoRow(
                     'Naslov',
                     order.customerAddress,
-                    valueAlign: TextAlign.left,
-                    valueFlex: 2,
+                    icon: Icons.directions,
+                    onTap: () => _launch(
+                      context,
+                      openMaps(order.customerAddress),
+                      'Zemljevida ni bilo mogoče odpreti.',
+                    ),
                   ),
-                DetailRow('Predaja', order.handover.label),
+                _InfoRow('Predaja', order.handover.label),
                 if (order.pickupAt != null)
-                  DetailRow(
+                  _InfoRow(
                     'Prevzem',
                     '${Fmt.date(order.pickupAt)} '
                         '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)}',
                   ),
                 if (order.deliveryAt != null)
-                  DetailRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
+                  _InfoRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
                 if (order.dueAt != null)
-                  DetailRow('Rok', Fmt.dateTime(order.dueAt)),
+                  _InfoRow('Rok', Fmt.dateTime(order.dueAt)),
               ],
             ),
           ),
@@ -146,6 +160,19 @@ class OrderDetailScreen extends ConsumerWidget {
       ),
       bottomNavigationBar: _actions(context, ref, ready, items.length),
     );
+  }
+
+  static Future<void> _launch(
+    BuildContext context,
+    Future<bool> launch,
+    String error,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var ok = false;
+    try {
+      ok = await launch;
+    } catch (_) {}
+    if (!ok) messenger.showSnackBar(SnackBar(content: Text(error)));
   }
 
   Widget _header(
@@ -316,7 +343,9 @@ class OrderDetailScreen extends ConsumerWidget {
           );
         },
         icon: const Icon(Icons.local_shipping),
-        label: const Text('Prevzeto pri stranki'),
+        label: Text(order.channel == OrderChannel.dropoff
+            ? 'Prevzeto v delavnico'
+            : 'Prevzeto pri stranki'),
       ));
     }
 
@@ -487,6 +516,57 @@ class _ItemRow extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Vrstica bloka Podatki: labele v stolpcu enake širine, vrednosti poravnane
+/// levo pod sabo, da se blok hitro prebere (QA v4 §8). Telefon in naslov sta
+/// klikljiva (klic / Maps) in to kažeta z ikono na desni.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.label, this.value, {this.icon, this.onTap});
+
+  final String label;
+  final String value;
+  final IconData? icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: onTap == null ? AppColors.text : AppColors.primary,
+              ),
+            ),
+          ),
+          if (icon != null) ...[
+            const SizedBox(width: 8),
+            Icon(icon, size: 18, color: AppColors.primary),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: row,
     );
   }
 }

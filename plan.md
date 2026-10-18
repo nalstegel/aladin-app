@@ -697,6 +697,76 @@ lastnikom pred implementacijo:
   Dejansko zamujena naročila (`isOverdue`) imajo prednost in še vedno kažejo
   "Zamuja X dni".
 
+### 4.10 — QA popravki v4 (PDF "ALADIN_APP_QA_popravki_v4_FINAL") — DONE v kodi (2026-09-28)
+Lastnikov QA dokument (v2 + v3 checklist, točke 1–15). Odločitve, potrjene z
+lastnikom pred implementacijo, so označene z ✔.
+
+**Vstop v proces**
+- ✔ **Vsako** novo naročilo (tudi Pripeljano) začne v `awaitingPickup` → zavihek
+  Naročila. V Čaka pranje gre šele ob uspešnem tisku etiket
+  (`Repository.markLabelsPrinted`, kliče ga `labels_screen.dart`) ali ob
+  "Prevzeto pri stranki". Ponovni tisk premakne samo še neprevzete kose.
+  Kos, dodan naročilu pred prevzemom, prav tako počaka v `awaitingPickup`.
+- Etikete po ustvarjanju imajo X (Zapri) — vrne tja, od koder je bilo
+  naročilo ustvarjeno.
+- Območje: `showSelectedIcon: false`, da se "Ljubljana" ne prelomi.
+
+**Stran Naročila** (logika v `lib/data/order_phases.dart`, testi v
+`test/order_phases_test.dart`; `OrderPhase` se je preselil sem iz
+`orders_screen.dart`)
+- Čaka pranje / Sušenje prikazujeta **posamezne kose**, grupirane po naročilu,
+  skupine razvrščene po prihodu (`RugItem.arrivedAt` = prvi prehod v
+  `awaitingWash`), najstarejši zgoraj. Tap na kos v Sušenju odpre Hitri
+  obračun neposredno.
+- ✔ Pripravljeno prikaže **samo v celoti pripravljena** naročila. Že
+  obračunani kosi nedokončanega naročila ostanejo sivo vidni v njegovi skupini
+  v Sušenju. Sub-taba **Pripeljano / Dostave** se razdelita po `handover`
+  (stranka pride / mi dostavimo) — to je natanko "kaj čaka osebni prevzem in
+  kaj moramo peljati na naslov".
+- Iskanje na vrhu (ID naročila ali kosa, ime brez šumnikov, telefon po
+  števkah, naslov) čez vse štiri zavihke; vsak zadetek pove, v katerem zavihku je.
+- `OrderCard`: naročilo pred prevzemom je nevtralno (rdeče samo, ko je termin
+  dejansko mimo — `WorkOrder.isPickupOverdue`), kaže termin, naslov in telefon,
+  brez vrstice "Čaka prevzem v delavnici." in brez "0/n prevzeto". To
+  **nadomešča** pravilo iz §4.9, da je vsako naročilo pred prevzemom rdeče.
+
+**Podrobnosti naročila / termin**
+- Blok Podatki ima stolpec label enake širine; telefon `Fmt.phone`
+  ("031 353 517"), tap = klic; tap na naslov = Apple Maps (iOS) / Google Maps.
+  Nov paket `url_launcher` + `<queries>` za `tel`/`https` v AndroidManifest.
+- `PickupWindowPicker`: namesto preset gumbov ena vrstica "Od [09:00] Do
+  [11:00]", tap odpre kolo (korak 30 min). Enaka ura Od/Do je dovoljena
+  (točna ura).
+
+**Hitri obračun**
+- Mere: 1/2/3 m² + Drugo, dodane standardne 1,2×1,7 / 2,3×1,7 / 3×2 / 3,5×2,5
+  (4 v vrsto, ker so oznake kratke); vrste in doplačila 2 v vrsto, nižji gumbi.
+- ✔ `ExtraTemplate.choices`: postavka z izbiro zneska ob obračunu ("Dlake"
+  5 € ali 10 €). Ureja se v Več → Doplačila (polje "Izbira ob obračunu", npr.
+  `5; 10`).
+
+**Etikete** (`lib/core/zpl.dart` + predogled)
+- Dostave: velik ID kosa (LJ-021-1). Pripeljano: največ ime + telefon + KOS x/y.
+  QR in interni ID ostaneta na obeh. `orderId` ni več parameter
+  `buildLabelZpl` (vsebovan je v ID-ju kosa). **Še ni natisnjeno na pravem
+  ZD230** — preveri, da se dolgo ime v 2 vrsticah + telefon + KOS + ID prilegajo
+  60 mm brez rezanja.
+
+**Vračilo**
+- Podpis se odpre kot sheet (brez vlečenja za zapiranje, da poteza podpisa ne
+  zapre okna); po podpisu ali administratorskem zaključku se aplikacija vrne na
+  seznam (`popUntil(isFirst)`).
+
+**✔ Šifrant ureja lastnik v aplikaciji, ne koda** — vrste in doplačila so v
+Firestoreju, seed je samo demo. Administrator v Več naredi:
+1. Vrste preprog: izbriši **Gumi tepihi** (ostale ostanejo).
+2. Doplačila: izbriši vse obstoječe in dodaj:
+   `Dodatno pranje` +30 %, `Urin` 3 €/m², `Dlake` 5 € z izbiro `5; 10`,
+   `Vnos` 5 €, `Iznos` 5 €. Ročni popust na kos je del zaslona, ne šifranta.
+
+**Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
+`flutter analyze` + testi, ne pa vizualno.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.

@@ -72,6 +72,25 @@ class Fmt {
     return '$n kosov';
   }
 
+  /// "031353517" → "031 353 517", "+38631353517" → "+386 31 353 517".
+  /// Vse, kar ni prepoznana slovenska številka, ostane kot je bilo vpisano.
+  static String phone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[\s/\-().]'), '');
+    String groups(String d) => d.length == 8
+        ? '${d.substring(0, 2)} ${d.substring(2, 5)} ${d.substring(5)}'
+        : d;
+    if (RegExp(r'^0\d{8}$').hasMatch(digits)) {
+      return '${digits.substring(0, 3)} ${digits.substring(3, 6)} '
+          '${digits.substring(6)}';
+    }
+    for (final prefix in ['+386', '00386']) {
+      if (digits.startsWith(prefix) && digits.length == prefix.length + 8) {
+        return '+386 ${groups(digits.substring(prefix.length))}';
+      }
+    }
+    return raw.trim();
+  }
+
   static String relative(DateTime d) {
     final diff = DateTime.now().difference(d);
     if (diff.inMinutes < 1) return 'pravkar';

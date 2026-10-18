@@ -216,19 +216,18 @@ class Repository extends StateNotifier<AppState> {
     final id = buildOrderId(location, seq);
     final now = DateTime.now();
 
-    // Pri dostavi preprog še nimamo v obratu — čakajo na prevzem.
-    final startStatus = channel == OrderChannel.delivery && pickupAt != null
-        ? RugStatus.awaitingPickup
-        : RugStatus.awaitingWash;
+    // Vsako novo naročilo začne v zavihku "Naročila" (QA v4 §2): v "Čaka
+    // pranje" gre šele, ko natisnemo etikete ali ga označimo kot prevzetega
+    // — tudi Pripeljano, sicer bi naročilo za prihodnji datum ali brez
+    // natisnjenih etiket izginilo iz prvega zavihka.
+    const startStatus = RugStatus.awaitingPickup;
 
     final order = WorkOrder(
       id: id,
       location: location,
       channel: channel,
       handover: handover,
-      status: startStatus == RugStatus.awaitingPickup
-          ? OrderStatus.scheduledPickup
-          : OrderStatus.inProduction,
+      status: OrderStatus.scheduledPickup,
       customerId: customer.id,
       customerName: customer.name,
       customerPhone: customer.phone,
@@ -293,15 +292,19 @@ class Repository extends StateNotifier<AppState> {
 
     final renumbered =
         existing.map((i) => i.copyWith(ofTotal: total)).toList();
+    // Če naročilo še ni prišlo v proces, tudi nov kos počaka z ostalimi.
+    final startStatus = existing.every((i) => i.status == RugStatus.awaitingPickup)
+        ? RugStatus.awaitingPickup
+        : RugStatus.awaitingWash;
     final fresh = RugItem(
       id: '$orderId-$total',
       orderId: orderId,
       index: total,
       ofTotal: total,
-      status: RugStatus.awaitingWash,
+      status: startStatus,
       history: [
         StatusEvent(
-          status: RugStatus.awaitingWash,
+          status: startStatus,
           at: now,
           userId: _actor.id,
           userName: _actor.name,
@@ -361,17 +364,22 @@ class Repository extends StateNotifier<AppState> {
   }
 
   /// Preproge smo pobrali pri stranki — vse čakajo na pranje.
-  void markOrderPickedUp(String orderId) {
+  void markOrderPickedUp(String orderId, {String note = 'Prevzeto pri stranki'}) {
     final now = DateTime.now();
     final items = state.items.map((i) {
       if (i.orderId != orderId || i.status != RugStatus.awaitingPickup) return i;
       return i.copyWith(
         status: RugStatus.awaitingWash,
-        history: [..._event(i, RugStatus.awaitingWash, now, 'Prevzeto pri stranki')],
+        history: [..._event(i, RugStatus.awaitingWash, now, note)],
       );
     }).toList();
     _commit(_recompute(state.copyWith(items: items), orderId));
   }
+
+  /// Etikete so natisnjene → preproge so fizično pri nas in gredo v proces
+  /// (QA v4 §2). Ponovni tisk že prevzetih kosov ne premakne nikamor.
+  void markLabelsPrinted(String orderId) =>
+      markOrderPickedUp(orderId, note: 'Etikete natisnjene');
 
   // ---------------------------------------------------------------- preproge
 
@@ -638,9 +646,19 @@ class Repository extends StateNotifier<AppState> {
     _commit(state.copyWith(extraTemplates: list));
   }
 
-  ExtraTemplate createExtraTemplate(String name, ExtraKind kind, double value) {
-    final t =
-        ExtraTemplate(id: _uuid.v4(), name: name, kind: kind, value: value);
+  ExtraTemplate createExtraTemplate(
+    String name,
+    ExtraKind kind,
+    double value, {
+    List<double> choices = const [],
+  }) {
+    final t = ExtraTemplate(
+      id: _uuid.v4(),
+      name: name,
+      kind: kind,
+      value: value,
+      choices: choices,
+    );
     upsertExtraTemplate(t);
     return t;
   }

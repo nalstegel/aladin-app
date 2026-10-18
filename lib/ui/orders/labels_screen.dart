@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/zpl.dart';
 import '../../data/providers.dart';
 import '../../data/zebra_printer.dart';
+import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
@@ -32,15 +33,19 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     try {
       final zpl = items
           .map((item) => buildLabelZpl(
-                orderId: order.number,
                 customerName: order.customerName,
                 dimensions: item.isMeasured
                     ? Fmt.dimensions(item.widthCm, item.lengthCm)
                     : '',
                 itemId: item.id,
+                dropoff: order.channel == OrderChannel.dropoff,
+                phone: Fmt.phone(order.customerPhone),
+                pieceLabel: item.label,
               ))
           .join();
       await ref.read(zebraPrinterServiceProvider).print(zpl);
+      // Natisnjene etikete pomenijo, da so preproge pri nas → Čaka pranje.
+      ref.read(repositoryProvider.notifier).markLabelsPrinted(order.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${items.length} etiket poslanih na tiskalnik.')),
@@ -69,7 +74,15 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Etikete ${order.number}'),
-        automaticallyImplyLeading: !widget.isNew,
+        // Po ustvarjanju naročila zapre celoten postopek in vrne tja, od
+        // koder je bilo naročilo ustvarjeno — brez odpiranja naročila.
+        leading: widget.isNew
+            ? IconButton(
+                tooltip: 'Zapri',
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
@@ -94,7 +107,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                           ),
                         ),
                         Text(
-                          'Natisni etikete in jih pripni na preproge.',
+                          'Natisni etikete in jih pripni na preproge. '
+                          'Dokler etikete niso natisnjene, naročilo '
+                          'ostane v zavihku Naročila.',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textMuted,
@@ -178,6 +193,33 @@ class _LabelPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Postavitev sledi pravi nalepki (`buildLabelZpl`): QR na vrhu, pod njim
+    // besedilo, ki je pri Pripeljano drugačno kot pri Dostavah.
+    final dropoff = order.channel == OrderChannel.dropoff;
+    final dims = item.isMeasured ? Fmt.dimensions(item.widthCm, item.lengthCm) : '';
+    final phone = Fmt.phone(order.customerPhone);
+
+    Widget text(String value, double size,
+            {FontWeight weight = FontWeight.w600,
+            int maxLines = 1,
+            Color color = AppColors.text,
+            double spacing = 0}) =>
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: size,
+              fontWeight: weight,
+              color: color,
+              letterSpacing: spacing,
+            ),
+          ),
+        );
+
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -185,51 +227,27 @@ class _LabelPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      // Postavitev sledi pravi nalepki: QR na vrhu (na sredini), besedilo
-      // pod njo — nalepka je pokončna (40×60mm), ne ležeča.
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           AspectRatio(
-            aspectRatio: 1,
+            aspectRatio: 1.25,
             child: QrImageView(
               data: item.id,
               padding: EdgeInsets.zero,
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            order.number,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            order.customerName,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-          if (item.isMeasured) ...[
-            const SizedBox(height: 4),
-            Text(
-              Fmt.dimensions(item.widthCm, item.lengthCm),
-              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
-            ),
+          const SizedBox(height: 6),
+          if (dropoff) ...[
+            text(order.customerName, 14, weight: FontWeight.w800, maxLines: 2),
+            if (phone.isNotEmpty) text(phone, 13, weight: FontWeight.w700),
+            text(item.label, 15, weight: FontWeight.w800),
+            text(item.id, 11, weight: FontWeight.w700, spacing: 1),
+          ] else ...[
+            text(item.id, 18, weight: FontWeight.w900),
+            text(order.customerName, 12, maxLines: 2),
+            if (dims.isNotEmpty) text(dims, 11, color: AppColors.textMuted),
           ],
-          const SizedBox(height: 4),
-          Text(
-            item.id,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1,
-            ),
-          ),
         ],
       ),
     );

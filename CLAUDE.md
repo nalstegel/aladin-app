@@ -77,7 +77,8 @@ lib/
     providers.dart     Riverpod providers built on repositoryProvider
   ui/
     dashboard/     "Danes" (Today) — 5 tappable tiles, inline Prevzemi/Vrni actions
-    orders/        Aktivna/Zaključena tabs + filter sheet (channel + step)
+    orders/        4 phase tabs (Naročila/Čaka pranje/Sušenje/Pripravljeno),
+                   search, channel filter — tab logic in data/order_phases.dart
     rugs/          single rug: measure sheet, finish sheet (extras/discount/price)
     scanner/       scanner TAB (live camera) + work lists + ScanCaptureScreen
     customers/     CRM (auto-built from order history)

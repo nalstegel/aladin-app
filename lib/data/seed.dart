@@ -25,8 +25,9 @@ AppState buildSeedState() {
     AppUser(id: 'u-ana', name: 'Ana', role: UserRole.worker),
   ];
 
-  // Štiri vrste in štiri doplačila, poimenovani in prešteti natanko po v3
-  // spec §4 (kompaktna mreža v hitrem obračunu). Id-ji ostajajo stari, da
+  // Štiri vrste po v3 spec §4 in pet doplačil po QA v4 §4 (kompaktna mreža
+  // v hitrem obračunu). To so samo demo podatki — pravi šifrant živi v
+  // Firestoreju in ga ureja administrator v Več. Id-ji vrst ostajajo stari, da
   // zgodovinski kosi spodaj (rugTypeName/AppliedExtra so lastni posnetki,
   // neodvisni od šifranta) niso prizadeti — glej models/catalog.dart.
   const rugTypes = [
@@ -37,10 +38,12 @@ AppState buildSeedState() {
   ];
 
   const extras = [
-    ExtraTemplate(id: 'e-dlake', name: 'Dlake', kind: ExtraKind.percent, value: 15),
-    ExtraTemplate(id: 'e-vonj', name: 'Urin / vonj', kind: ExtraKind.fixed, value: 8),
-    ExtraTemplate(id: 'e-madezi', name: 'Dodatna umazanija', kind: ExtraKind.percent, value: 20),
-    ExtraTemplate(id: 'e-drugo', name: 'Drugo / popravek', kind: ExtraKind.fixed, value: 10),
+    // Doplačila, usklajena z dejanskim delom (QA v4 §4).
+    ExtraTemplate(id: 'e-pranje', name: 'Dodatno pranje', kind: ExtraKind.percent, value: 30),
+    ExtraTemplate(id: 'e-urin', name: 'Urin', kind: ExtraKind.perM2, value: 3),
+    ExtraTemplate(id: 'e-dlake', name: 'Dlake', kind: ExtraKind.fixed, value: 5, choices: [5, 10]),
+    ExtraTemplate(id: 'e-vnos', name: 'Vnos', kind: ExtraKind.fixed, value: 5),
+    ExtraTemplate(id: 'e-iznos', name: 'Iznos', kind: ExtraKind.fixed, value: 5),
   ];
 
   final customers = [

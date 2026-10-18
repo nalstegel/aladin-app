@@ -75,6 +75,14 @@ class WorkOrder {
   bool isOverdue(DateTime now) =>
       dueAt != null && status.isOpen && dueAt!.isBefore(now);
 
+  /// Naš planiran prevzem je zamujen: preproga je še pri stranki, dogovorjeni
+  /// termin (konec časovnega okna, sicer začetek) pa je že mimo. Pred tem je
+  /// čakanje na prevzem normalno stanje, ne opozorilo (QA v4 §8).
+  bool isPickupOverdue(DateTime now) {
+    if (status != OrderStatus.scheduledPickup || pickupAt == null) return false;
+    return now.isAfter(pickupWindowEnd ?? pickupAt!);
+  }
+
   WorkOrder copyWith({
     OrderChannel? channel,
     HandoverMode? handover,

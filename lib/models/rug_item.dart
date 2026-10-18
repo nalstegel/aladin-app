@@ -72,6 +72,15 @@ class RugItem {
   /// Kdaj se je kos nazadnje premaknil — za delovne sezname ob stroju.
   DateTime? get lastChangeAt => history.isEmpty ? null : history.last.at;
 
+  /// Kdaj je kos prišel v proces (prvi prehod v "Na pranju") — za vrstni red
+  /// v Čaka pranje / Sušenje. Za stare zapise brez tega dogodka prvi dogodek.
+  DateTime? get arrivedAt {
+    for (final e in history) {
+      if (e.status == RugStatus.awaitingWash) return e.at;
+    }
+    return history.isEmpty ? null : history.first.at;
+  }
+
   bool get isMeasured => m2 > 0 && rugTypeId != null;
 
   /// Površina v m². Nepravilne oblike imajo ročni vnos.

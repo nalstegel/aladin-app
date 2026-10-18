@@ -170,8 +170,13 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
         SegmentedButton<OrderLocation>(
           segments: [
             for (final l in OrderLocation.values)
-              ButtonSegment(value: l, label: Text(l.label)),
+              ButtonSegment(
+                value: l,
+                label: Text(l.label, maxLines: 1, softWrap: false),
+              ),
           ],
+          // Brez kljukice — sicer "Ljubljana" nima prostora in se prelomi.
+          showSelectedIcon: false,
           selected: {_location},
           onSelectionChanged: (s) => setState(() => _location = s.first),
         ),

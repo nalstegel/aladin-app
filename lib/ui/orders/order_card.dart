@@ -31,12 +31,18 @@ class OrderCard extends ConsumerWidget {
     final state = ref.watch(repositoryProvider);
     final items = state.itemsOf(order.id);
     final progress = StageProgress.of(items);
-    final overdue = order.isOverdue(DateTime.now());
-    // Naročilo, ki še ni bilo prevzeto v delavnico, je vedno "za akcijo" —
-    // ne glede na rok — zato ima enak opozorilni videz kot zamujeno.
+    final now = DateTime.now();
+    final overdue = order.isOverdue(now);
+    // Naročilo, ki čaka naš planiran prevzem, je normalno stanje: preproga je
+    // še pri stranki. Rdeče postane šele, ko je termin prevzema mimo (QA v4 §8).
     final pendingIntake = order.status == OrderStatus.scheduledPickup;
-    final flagged = overdue || pendingIntake;
-    final accent = flagged ? AppColors.danger : AppColors.forOrder(order.status);
+    final pickupLate = order.isPickupOverdue(now);
+    final flagged = overdue || pickupLate;
+    final accent = flagged
+        ? AppColors.danger
+        : pendingIntake
+            ? AppColors.border
+            : AppColors.forOrder(order.status);
 
     return AppCard(
       accent: accent,
@@ -81,7 +87,7 @@ class OrderCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          _line(),
+          if (pendingIntake) ..._intakeLines() else _line(),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -102,7 +108,8 @@ class OrderCard extends ConsumerWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: items.isEmpty
+                // Pred prevzemom ni kaj meriti — "0/2 prevzeto" bi bil šum.
+                child: items.isEmpty || pendingIntake
                     ? const SizedBox.shrink()
                     : StageProgressBar(progress),
               ),
@@ -111,7 +118,8 @@ class OrderCard extends ConsumerWidget {
                 FilledButton(
                   onPressed: action!.onPressed,
                   style: FilledButton.styleFrom(
-                    backgroundColor: accent,
+                    backgroundColor:
+                        accent == AppColors.border ? AppColors.primary : accent,
                     minimumSize: const Size(0, 34),
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     shape: RoundedRectangleBorder(
@@ -137,11 +145,11 @@ class OrderCard extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ] else if (pendingIntake) ...[
+          ] else if (pickupLate) ...[
             const SizedBox(height: 6),
-            const Text(
-              'Čaka prevzem v delavnici.',
-              style: TextStyle(
+            Text(
+              'Prevzem zamuja · termin ${_pickupSlot()}',
+              style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.danger,
                 fontWeight: FontWeight.w700,
@@ -163,6 +171,44 @@ class OrderCard extends ConsumerWidget {
     if (days == 3 || days == 4) return '$days dni';
     return '$days dni';
   }
+
+  String _pickupSlot() => '${Fmt.dayHeader(order.pickupAt!)} '
+      '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)}';
+
+  /// Za naročila pred prevzemom so osnovni podatki vidni že na kartici:
+  /// termin, naslov in telefon — brez odpiranja naročila (QA v4 §8).
+  List<Widget> _intakeLines() => [
+        _infoRow(
+          Icons.schedule,
+          order.pickupAt != null
+              ? _pickupSlot()
+              : 'Sprejeto ${Fmt.dateShort(order.createdAt)}',
+        ),
+        if (order.customerAddress.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          _infoRow(Icons.place_outlined, order.customerAddress),
+        ],
+        if (order.customerPhone.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          _infoRow(Icons.phone_outlined, Fmt.phone(order.customerPhone)),
+        ],
+      ];
+
+  Widget _infoRow(IconData icon, String text) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+        ],
+      );
 
   /// Druga vrstica pove tisto, kar delavec potrebuje za naslednji korak:
   /// naslov in uro pri dostavi, rok pri osebnem prevzemu.
