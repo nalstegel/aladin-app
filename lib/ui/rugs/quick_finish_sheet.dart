@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../data/billing.dart';
 import '../../data/providers.dart';
 import '../../models/catalog.dart';
-import '../../models/enums.dart';
+import '../../models/order.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
+import '../widgets/extra_choice.dart';
 
 /// Hitre mere. Prve tri so gumbi za površino (v3 spec §4: "1 m²", "2 m²",
 /// "3 m²") za steze / tekoče metre — širina×dolžina je tam le interna
@@ -125,7 +127,10 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final types = state.rugTypes.where((t) => t.active).toList();
-    final templates = state.extraTemplates.where((t) => t.active).toList();
+    // Vnos / Iznos sta informacija prevzema (V8 §2) — ne na tem zaslonu.
+    final templates = state.extraTemplates
+        .where((t) => t.active && !t.isOrderLevel)
+        .toList();
     final type = _typeId == null ? null : state.rugType(_typeId!);
 
     final chosen = [
@@ -151,6 +156,17 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
         ? overrideValue
         : preview.computedPrice;
     final valid = _m2 > 0 && type != null;
+
+    // Obračun celega naročila z ravnokar obračunanim kosom: doplačila prevzema,
+    // dostava in minimum 50 € (V8 §3) — minimum se pokaže, ko je to zadnji kos.
+    final order = state.order(widget.item.orderId);
+    final billing = order == null
+        ? null
+        : billingFor(
+            order,
+            state.itemsOf(order.id),
+            priceOverrides: {widget.item.id: finalPrice},
+          );
 
     return Padding(
       padding: EdgeInsets.only(
@@ -327,6 +343,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
                   suffixText: '€',
                 ),
               ),
+            if (order != null && billing != null) _orderSummary(order, billing, finalPrice),
             const SizedBox(height: 18),
             FilledButton.icon(
               style: FilledButton.styleFrom(backgroundColor: AppColors.ready),
@@ -353,6 +370,41 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
                   : null,
               icon: const Icon(Icons.check_circle_outline),
               label: Text('Končano · ${Fmt.money(finalPrice)} → Pripravljeno'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Povzetek naročila pod obračunom kosa. Kaže se samo, če ima naročilo
+  /// kaj poleg kosov (Vnos/Iznos, dostava) ali velja minimum 50 €.
+  Widget _orderSummary(WorkOrder order, OrderBilling b, double thisPrice) {
+    final others = b.itemsTotal - thisPrice;
+    final hasExtras = order.orderExtras.isNotEmpty || b.deliveryFee > 0;
+    if (!hasExtras && b.minimumTopUp == 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: AppCard(
+        child: Column(
+          children: [
+            DetailRow('Naročilo ${order.number}', '', strong: true),
+            DetailRow('Ta kos', Fmt.money(thisPrice)),
+            if (others > 0.004) DetailRow('Ostali kosi', Fmt.money(others)),
+            for (final e in order.orderExtras)
+              DetailRow(e.name, Fmt.money(e.amount(base: 0, m2: 0))),
+            if (b.deliveryFee > 0)
+              DetailRow('Dostavno doplačilo', Fmt.money(b.deliveryFee)),
+            if (b.minimumTopUp > 0)
+              DetailRow(
+                'Minimum ${minimumDeliveryOrderTotal.toStringAsFixed(0)} €',
+                Fmt.money(b.minimumTopUp),
+              ),
+            const Divider(height: 18),
+            DetailRow(
+              b.allPriced ? 'Skupaj naročilo' : 'Skupaj do zdaj',
+              Fmt.money(b.total),
+              strong: true,
             ),
           ],
         ),
@@ -427,7 +479,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
         for (final t in templates)
           _choiceButton(
             label: _selected.containsKey(t.id) && t.hasChoices
-                ? '${t.name} · ${_formatValue(_selected[t.id]!, t)}'
+                ? '${t.name} · ${formatExtraValue(_selected[t.id]!, t)}'
                 : t.name,
             selected: _selected.containsKey(t.id),
             onTap: () => _toggleExtra(t),
@@ -446,63 +498,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
       return;
     }
     // Postavka z izbiro (npr. Dlake 5 € / 10 €): delavec izbere znesek.
-    final picked = await showModalBottomSheet<double>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                t.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  for (final v in t.choices) ...[
-                    if (v != t.choices.first) const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(0, 52),
-                          backgroundColor: _selected[t.id] == v
-                              ? AppColors.primary
-                              : AppColors.primary.withValues(alpha: 0.75),
-                        ),
-                        onPressed: () => Navigator.pop(context, v),
-                        child: Text(
-                          _formatValue(v, t),
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              if (_selected.containsKey(t.id))
-                TextButton(
-                  onPressed: () => Navigator.pop(context, 0.0),
-                  child: const Text('Odstrani'),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final picked = await pickExtraChoice(context, t, current: _selected[t.id]);
     if (picked == null || !mounted) return;
     setState(() {
       if (picked == 0) {
@@ -511,13 +507,6 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
         _selected[t.id] = picked;
       }
     });
-  }
-
-  static String _formatValue(double v, ExtraTemplate t) {
-    final n = v.abs() == v.abs().roundToDouble()
-        ? v.abs().toStringAsFixed(0)
-        : v.abs().toStringAsFixed(2).replaceAll('.', ',');
-    return '$n ${t.kind.label}';
   }
 
   Widget _choiceButton({

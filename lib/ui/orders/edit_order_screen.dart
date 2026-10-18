@@ -9,6 +9,7 @@ import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../customers/customer_form.dart';
 import '../widgets/common.dart';
+import '../widgets/delivery_fee_stepper.dart';
 import '../widgets/pickup_window_picker.dart';
 
 /// Urejanje podatkov obstoječega naročila (stranka, kanal, termini,
@@ -34,6 +35,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
   TimeOfDay? _pickupEnd;
   DateTime? _deliveryAt;
   DateTime? _dueAt;
+  late double _deliveryFee;
   final _search = TextEditingController();
   late final TextEditingController _notes;
   bool _pickingCustomer = false;
@@ -57,6 +59,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
         : TimeOfDay.fromDateTime(order.pickupWindowEnd!);
     _deliveryAt = order.deliveryAt;
     _dueAt = order.dueAt;
+    _deliveryFee = order.deliveryFee;
     _notes = TextEditingController(text: order.notes);
   }
 
@@ -314,6 +317,11 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
                 _pickupEnd = end;
               }),
             ),
+            const SizedBox(height: 12),
+            DeliveryFeeStepper(
+              value: _deliveryFee,
+              onChanged: (v) => setState(() => _deliveryFee = v),
+            ),
             const Divider(height: 24),
           ],
           _dateTile(
@@ -440,6 +448,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
       clearDeliveryAt: deliveryAt == null,
       dueAt: _dueAt,
       clearDueAt: _dueAt == null,
+      deliveryFee: _channel == OrderChannel.dropoff ? 0 : _deliveryFee,
       notes: _notes.text,
     );
     repo.updateOrder(updated);

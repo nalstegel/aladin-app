@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../data/navigation.dart';
 import '../../data/order_phases.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
@@ -10,13 +11,13 @@ import '../../models/rug_item.dart';
 import '../rugs/quick_finish_sheet.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
-import 'new_order_screen.dart';
 import 'order_card.dart';
 import 'order_detail_screen.dart';
+import 'ready_lists.dart';
 
-/// Filter nad seznamom naročil. Kanal ni več zavihek — naročila vseh treh
-/// poti so v istem seznamu, kanal pa je oznaka na kartici. Faza (korak
-/// proizvodnje) ni več ločen filter, ker to zdaj predstavljajo zavihki.
+/// Filter nad seznamom naročil. Kanal ni zavihek — naročila vseh poti so v
+/// istem seznamu, kanal pa je oznaka na kartici. Faza (korak proizvodnje) ni
+/// filter, ker to predstavljajo zavihki.
 class OrderFilter {
   const OrderFilter({this.channel});
 
@@ -59,6 +60,18 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(orderFilterProvider);
+    final counts = phaseCounts(
+      ref.watch(repositoryProvider),
+      channel: filter.channel,
+    );
+
+    // Bližnjice z Danes (blok Delavnica) odprejo ustrezen zavihek.
+    ref.listen(ordersPhaseRequestProvider, (_, request) {
+      if (request == null) return;
+      _search.clear();
+      setState(() => _query = '');
+      _tabs.animateTo(request.phase.index);
+    });
 
     return Scaffold(
       body: SafeArea(
@@ -118,20 +131,44 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             if (_query.isNotEmpty)
               Expanded(child: _SearchResults(query: _query))
             else ...[
+              // Vseh pet zavihkov je na isti ravni, števec je viden ob vsakem.
               TabBar(
                 controller: _tabs,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
                 labelColor: AppColors.primary,
                 unselectedLabelColor: AppColors.textMuted,
                 indicatorColor: AppColors.primary,
-                indicatorSize: TabBarIndicatorSize.label,
+                indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: AppColors.border,
-                labelStyle: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-                tabs: [for (final p in OrderPhase.values) Tab(text: p.label)],
+                labelPadding: EdgeInsets.zero,
+                tabs: [
+                  for (final p in OrderPhase.values)
+                    Tab(
+                      height: 54,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '${counts[p] ?? 0}',
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                            ),
+                          ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              p.label,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
               if (!filter.isEmpty) _activeFilterBar(filter),
               Expanded(
@@ -142,7 +179,9 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
                       if (p.showsItems)
                         _ItemGroupList(phase: p)
                       else if (p == OrderPhase.ready)
-                        const _ReadyList()
+                        ReadyList(channel: filter.channel)
+                      else if (p == OrderPhase.deliveries)
+                        DeliveriesList(channel: filter.channel)
                       else
                         const _IntakeList(),
                   ],
@@ -151,16 +190,6 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
             ],
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const NewOrderScreen()),
-        ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Novo naročilo'),
       ),
     );
   }
@@ -335,88 +364,20 @@ class _IntakeList extends ConsumerWidget {
       return _empty(
         filter,
         'Ni novih naročil',
-        'Novo naročilo dodaš z gumbom spodaj desno.',
+        'Novo naročilo ustvariš z Hitrim vnosom na zavihku Danes.',
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       itemCount: list.length,
       separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => OrderCard(list[i]),
-    );
-  }
-}
-
-/// Zavihek "Pripravljeno": cela naročila, v katerih so vsi kosi obračunani.
-/// Razdeljena sta avtomatsko po načinu predaje — kaj čaka osebni prevzem in
-/// kaj moramo peljati na naslov.
-class _ReadyList extends ConsumerStatefulWidget {
-  const _ReadyList();
-
-  @override
-  ConsumerState<_ReadyList> createState() => _ReadyListState();
-}
-
-class _ReadyListState extends ConsumerState<_ReadyList> {
-  HandoverMode _mode = HandoverMode.customerCollects;
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(repositoryProvider);
-    final filter = ref.watch(orderFilterProvider);
-
-    final all =
-        state.orders
-            .where((o) => filter.channel == null || o.channel == filter.channel)
-            .where(
-              (o) => OrderPhase.ready.containsOrder(o, state.itemsOf(o.id)),
-            )
-            .toList()
-          ..sort(
-            (a, b) =>
-                (a.readyAt ?? a.createdAt).compareTo(b.readyAt ?? b.createdAt),
-          );
-    int count(HandoverMode m) => all.where((o) => o.handover == m).length;
-    final list = all.where((o) => o.handover == _mode).toList();
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(
-            children: [
-              FilterPill(
-                label: 'Pripeljano (${count(HandoverMode.customerCollects)})',
-                selected: _mode == HandoverMode.customerCollects,
-                onTap: () =>
-                    setState(() => _mode = HandoverMode.customerCollects),
-              ),
-              const SizedBox(width: 8),
-              FilterPill(
-                label: 'Dostave (${count(HandoverMode.weDeliver)})',
-                selected: _mode == HandoverMode.weDeliver,
-                onTap: () => setState(() => _mode = HandoverMode.weDeliver),
-              ),
-            ],
-          ),
+      itemBuilder: (_, i) => OrderCard(
+        list[i],
+        action: OrderCardAction(
+          label: 'Prevzeto',
+          onPressed: () => startPickup(context, list[i]),
         ),
-        Expanded(
-          child: list.isEmpty
-              ? _empty(
-                  filter,
-                  _mode == HandoverMode.customerCollects
-                      ? 'Nič ne čaka osebnega prevzema'
-                      : 'Nič ne čaka dostave',
-                  null,
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => OrderCard(list[i]),
-                ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -612,7 +573,7 @@ class _ItemRow extends StatelessWidget {
   }
 }
 
-/// Rezultati iskanja čez vse štiri zavihke. Vsak rezultat pove, v katerem
+/// Rezultati iskanja čez vse zavihke. Vsak rezultat pove, v katerem
 /// zavihku se naročilo (ali iskani kos) trenutno nahaja.
 class _SearchResults extends ConsumerWidget {
   const _SearchResults({required this.query});
@@ -633,7 +594,7 @@ class _SearchResults extends ConsumerWidget {
       return const EmptyState(
         icon: Icons.search_off,
         title: 'Ni zadetkov',
-        message: 'Iskanje zajame odprta naročila v vseh štirih zavihkih.',
+        message: 'Iskanje zajame odprta naročila v vseh zavihkih.',
       );
     }
 

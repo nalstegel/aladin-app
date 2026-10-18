@@ -36,7 +36,7 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: items,
     );
-    repo.markLabelsPrinted(order.id);
+    repo.markOrderPickedUp(order.id);
     return order;
   }
 
@@ -70,7 +70,7 @@ void main() {
     expect(washing.single.items.single.id, '${first.id}-3');
   });
 
-  test('naročilo pred tiskom etiket ni v Čaka pranje', () {
+  test('naročilo pred potrditvijo prevzema ni v Čaka pranje', () {
     final order = repo.createOrder(
       customer: customer,
       location: OrderLocation.ljubljana,

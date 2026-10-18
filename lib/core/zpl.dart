@@ -1,3 +1,5 @@
+import '../models/enums.dart';
+
 /// ZPL predloge za nalepke, natisnjene na Zebra ZD230 (glej
 /// `lib/data/zebra_printer.dart` za pošiljanje po omrežju).
 ///
@@ -19,35 +21,56 @@ String _centeredLine(int y, int fontSize, String text, {int maxLines = 1}) =>
     '^FO0,$y^FB$labelWidthDots,$maxLines,0,C,0'
     '^A0N,$fontSize,$fontSize^FD$text^FS\n';
 
+/// Tri vrste nalepk (V8 §5). Nalepka mora takoj povedati, kam kos sodi —
+/// brez informacij o prevzemni točki.
+enum LabelKind {
+  /// MB / CE / DOL: velika oznaka regije + x/y + ime/telefon + QR.
+  region,
+
+  /// LJ dostava: velik interni ID naročila (LJ-099) + x/y + QR, ime manjše.
+  ljDelivery,
+
+  /// LJ Pripeljano: veliko ime + telefon + x/y + QR.
+  dropoff,
+}
+
+/// Vrsto nalepke določita naročilo samo: regija se napolni samodejno iz
+/// naročila (pri tisku ni dodatnega izbiranja). Najprej odloča regija, nato
+/// način — MB/CE/DOL imajo vedno regijsko nalepko.
+LabelKind labelKindFor({
+  required OrderLocation location,
+  required OrderChannel channel,
+}) {
+  if (location != OrderLocation.ljubljana) return LabelKind.region;
+  return channel == OrderChannel.dropoff
+      ? LabelKind.dropoff
+      : LabelKind.ljDelivery;
+}
+
 /// Zgradi ZPL za eno nalepko kosa preproge. QR koda kosa je vedno na vrhu
-/// (na sredini), pod njo pa besedilo, ki je odvisno od načina naročila (QA v4
-/// §8 "Etikete"): etiketa mora zaposlenemu takoj povedati, kam kos odloži.
+/// (na sredini), pod njo pa besedilo glede na [kind].
 ///
-/// * Dostave ([dropoff] = false): najbolj viden je ID kosa (npr. LJ-021-1),
-///   pod njim ime stranke in mere.
-/// * Pripeljano ([dropoff] = true): najbolj vidni so ime stranke, telefon in
-///   "KOS x/y", da se kosi iste stranke fizično združijo brez telefona. ID
-///   kosa je pod tem manjši.
-///
-/// `itemId` je na obeh vrstah hkrati vsebina QR kode in natisnjen kot
-/// besedilo — brez tega bi ročni vnos oznake, ko QR ne skenira (glej
-/// `scanner_screen.dart`), na nalepki nimal kaj prepisati.
+/// `itemId` je hkrati vsebina QR kode in (majhen) natisnjen tekst — brez tega
+/// ročni vnos oznake, ko QR ne skenira (glej `scanner_screen.dart`), na
+/// nalepki ne bi imel kaj prepisati. [orderId] (npr. LJ-099) je pri dostavi
+/// iz Ljubljane največje besedilo, [pieceLabel] je "3/4".
 String buildLabelZpl({
-  required String customerName,
-  required String dimensions,
+  required LabelKind kind,
   required String itemId,
-  bool dropoff = false,
+  required String orderId,
+  required String pieceLabel,
+  String customerName = '',
   String phone = '',
-  String pieceLabel = '',
+  String regionCode = '',
 }) {
   final name = _escapeZpl(customerName);
-  final size = _escapeZpl(dimensions);
   final id = _escapeZpl(itemId);
+  final order = _escapeZpl(orderId);
   final tel = _escapeZpl(phone);
   final piece = _escapeZpl(pieceLabel);
+  final region = _escapeZpl(regionCode);
 
-  // Vrstice brez podatka (npr. mere, dokler kos ni izmerjen) se preskočijo
-  // — sam pomišljaj na nalepki izgleda kot madež, ne kot podatek — in
+  // Vrstice brez podatka (npr. telefon, ki ga stranka nima) se preskočijo in
   // naslednje se pomaknejo navzgor, da med njimi ne ostane luknja.
   final body = StringBuffer();
   var y = 215;
@@ -57,16 +80,22 @@ String buildLabelZpl({
     y += fontSize * maxLines + gap;
   }
 
-  if (dropoff) {
-    line(name, 34, maxLines: 2);
-    line(tel, 30);
-    line(piece, 36);
-    line(id, 22);
-    line(size, 20);
-  } else {
-    line(id, 48, gap: 12);
-    line(name, 26, maxLines: 2);
-    line(size, 22);
+  switch (kind) {
+    case LabelKind.region:
+      line(region, 100, gap: 6);
+      line(piece, 56);
+      line(name, 28);
+      line(tel, 26);
+    case LabelKind.ljDelivery:
+      line(order, 72, gap: 6);
+      line(piece, 58);
+      line(name, 26, maxLines: 2);
+      line(id, 20);
+    case LabelKind.dropoff:
+      line(name, 34, maxLines: 2);
+      line(tel, 30);
+      line(piece, 58);
+      line(id, 20);
   }
 
   return '^XA\n'

@@ -4,6 +4,7 @@ import '../models/customer.dart';
 import '../models/enums.dart';
 import '../models/order.dart';
 import '../models/rug_item.dart';
+import 'billing.dart';
 
 /// Celotno stanje aplikacije. Nespremenljivo — vsaka sprememba ustvari novo.
 class AppState {
@@ -21,6 +22,7 @@ class AppState {
   final int nextOrderSeqLjubljana;
   final int nextOrderSeqMaribor;
   final int nextOrderSeqCelje;
+  final int nextOrderSeqDolenjska;
 
   const AppState({
     this.customers = const [],
@@ -33,12 +35,14 @@ class AppState {
     this.nextOrderSeqLjubljana = 1,
     this.nextOrderSeqMaribor = 1,
     this.nextOrderSeqCelje = 1,
+    this.nextOrderSeqDolenjska = 1,
   });
 
   int nextOrderSeq(OrderLocation location) => switch (location) {
         OrderLocation.ljubljana => nextOrderSeqLjubljana,
         OrderLocation.maribor => nextOrderSeqMaribor,
         OrderLocation.celje => nextOrderSeqCelje,
+        OrderLocation.dolenjska => nextOrderSeqDolenjska,
       };
 
   AppUser? get currentUser {
@@ -102,7 +106,15 @@ class AppState {
       .where((i) => i.status == RugStatus.ready || i.status == RugStatus.returned)
       .length;
 
+  /// Končni obračun naročila: kosi, doplačila ob prevzemu, dostava in
+  /// minimum 50 € (glej `billing.dart`).
+  OrderBilling? billing(String orderId) {
+    final o = order(orderId);
+    return o == null ? null : billingFor(o, itemsOf(orderId));
+  }
+
   double orderTotal(String orderId) =>
+      billing(orderId)?.total ??
       itemsOf(orderId).fold<double>(0, (s, i) => s + i.price);
 
   double orderM2(String orderId) =>
@@ -123,6 +135,7 @@ class AppState {
     int? nextOrderSeqLjubljana,
     int? nextOrderSeqMaribor,
     int? nextOrderSeqCelje,
+    int? nextOrderSeqDolenjska,
     bool clearCurrentUser = false,
   }) =>
       AppState(
@@ -137,6 +150,8 @@ class AppState {
         nextOrderSeqLjubljana: nextOrderSeqLjubljana ?? this.nextOrderSeqLjubljana,
         nextOrderSeqMaribor: nextOrderSeqMaribor ?? this.nextOrderSeqMaribor,
         nextOrderSeqCelje: nextOrderSeqCelje ?? this.nextOrderSeqCelje,
+        nextOrderSeqDolenjska:
+            nextOrderSeqDolenjska ?? this.nextOrderSeqDolenjska,
       );
 
   Map<String, dynamic> toJson() => {
@@ -150,6 +165,7 @@ class AppState {
         'nextOrderSeqLjubljana': nextOrderSeqLjubljana,
         'nextOrderSeqMaribor': nextOrderSeqMaribor,
         'nextOrderSeqCelje': nextOrderSeqCelje,
+        'nextOrderSeqDolenjska': nextOrderSeqDolenjska,
       };
 
   factory AppState.fromJson(Map<String, dynamic> j) {
@@ -168,6 +184,7 @@ class AppState {
       nextOrderSeqLjubljana: j['nextOrderSeqLjubljana'] as int? ?? 1,
       nextOrderSeqMaribor: j['nextOrderSeqMaribor'] as int? ?? 1,
       nextOrderSeqCelje: j['nextOrderSeqCelje'] as int? ?? 1,
+      nextOrderSeqDolenjska: j['nextOrderSeqDolenjska'] as int? ?? 1,
     );
   }
 }

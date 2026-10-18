@@ -6,15 +6,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/format.dart';
 import '../../core/launch.dart';
 import '../../core/theme.dart';
+import '../../data/billing.dart';
 import '../../data/providers.dart';
 import '../../data/repository.dart';
 import '../../models/enums.dart';
+import '../../models/order.dart';
 import '../../models/return_proof.dart';
 import '../../models/rug_item.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
 import 'edit_order_screen.dart';
 import 'labels_screen.dart';
+import 'pickup_sheet.dart';
 import 'return_flow_screen.dart';
 
 class OrderDetailScreen extends ConsumerWidget {
@@ -102,6 +105,13 @@ class OrderDetailScreen extends ConsumerWidget {
                   _InfoRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
                 if (order.dueAt != null)
                   _InfoRow('Rok', Fmt.dateTime(order.dueAt)),
+                if (order.calledAt != null)
+                  _InfoRow(
+                    'Klicano',
+                    '${Fmt.dateShort(order.calledAt)} ob ${Fmt.time(order.calledAt)}',
+                  ),
+                if (order.inVanAt != null)
+                  _InfoRow('V kombiju', Fmt.dateTime(order.inVanAt)),
               ],
             ),
           ),
@@ -151,7 +161,12 @@ class OrderDetailScreen extends ConsumerWidget {
             const SizedBox(height: 8),
           ],
           const SectionHeader('Obračun'),
-          _totals(state.orderM2(orderId), state.orderTotal(orderId), items),
+          _totals(
+            state.orderM2(orderId),
+            order,
+            billingFor(order, items),
+            items,
+          ),
           if (order.returnProof != null) ...[
             const SectionHeader('Dokazilo o vračilu'),
             _proof(order.returnProof!),
@@ -231,7 +246,12 @@ class OrderDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _totals(double m2, double total, List<RugItem> items) {
+  Widget _totals(
+    double m2,
+    WorkOrder order,
+    OrderBilling billing,
+    List<RugItem> items,
+  ) {
     final measured = items.where((i) => i.isMeasured).length;
     return AppCard(
       child: Column(
@@ -239,7 +259,20 @@ class OrderDetailScreen extends ConsumerWidget {
           DetailRow('Izmerjeni kosi', '$measured / ${items.length}'),
           DetailRow('Skupaj površina', Fmt.m2(m2)),
           const Divider(height: 18),
-          DetailRow('Skupaj za plačilo', Fmt.money(total), strong: true),
+          DetailRow('Kosi', Fmt.money(billing.itemsTotal)),
+          // Doplačila prevzema (Vnos/Iznos) in dostava so informacija
+          // prevzema, ki se samo prenese v končni obračun (V8 §2).
+          for (final e in order.orderExtras)
+            DetailRow(e.name, Fmt.money(e.amount(base: 0, m2: 0))),
+          if (billing.deliveryFee > 0)
+            DetailRow('Dostavno doplačilo', Fmt.money(billing.deliveryFee)),
+          if (billing.minimumTopUp > 0)
+            DetailRow(
+              'Minimum ${minimumDeliveryOrderTotal.toStringAsFixed(0)} €',
+              Fmt.money(billing.minimumTopUp),
+            ),
+          const Divider(height: 18),
+          DetailRow('Skupaj za plačilo', Fmt.money(billing.total), strong: true),
           if (measured < items.length)
             const Padding(
               padding: EdgeInsets.only(top: 6),
@@ -334,13 +367,17 @@ class OrderDetailScreen extends ConsumerWidget {
 
     if (order.status == OrderStatus.scheduledPickup) {
       return wrap(FilledButton.icon(
-        onPressed: () {
-          repo.markOrderPickedUp(orderId);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Preproge prevzete — čakajo na pranje'),
-            ),
-          );
+        // Odpre hiter korak prevzema z doplačili (V8 §2); šele Potrdi premakne
+        // kose v Čaka pranje.
+        onPressed: () async {
+          final confirmed = await PickupSheet.show(context, orderId);
+          if (confirmed && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Preproge prevzete — čakajo na pranje'),
+              ),
+            );
+          }
         },
         icon: const Icon(Icons.local_shipping),
         label: Text(order.channel == OrderChannel.dropoff
@@ -350,7 +387,7 @@ class OrderDetailScreen extends ConsumerWidget {
     }
 
     if (order.status.isHandoverReady) {
-      return wrap(FilledButton.icon(
+      final returnButton = FilledButton.icon(
         style: FilledButton.styleFrom(backgroundColor: AppColors.ready),
         onPressed: () => Navigator.push(
           context,
@@ -364,7 +401,51 @@ class OrderDetailScreen extends ConsumerWidget {
               ? 'Predaja stranki'
               : 'Vračilo na naslov',
         ),
-      ));
+      );
+      // Dostava: glavna akcija je V kombi (V8 §4); ko je naročilo v kombiju,
+      // je glavna akcija vračilo, V Pripravljeno pa ga vrne Iz kombija.
+      if (order.status == OrderStatus.awaitingDelivery) {
+        return wrap(Row(
+          children: [
+            Expanded(
+              child: order.inVanAt == null
+                  ? OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ReturnFlowScreen(orderId: orderId),
+                        ),
+                      ),
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('Vračilo'),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: () => repo.removeFromVan(orderId),
+                      icon: const Icon(Icons.undo),
+                      label: const Text('Iz kombija'),
+                    ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: order.inVanAt == null
+                  ? FilledButton.icon(
+                      onPressed: () {
+                        repo.sendToVan(orderId);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${order.number} je v kombiju.'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.local_shipping),
+                      label: const Text('V kombi'),
+                    )
+                  : returnButton,
+            ),
+          ],
+        ));
+      }
+      return wrap(returnButton);
     }
 
     return wrap(Row(

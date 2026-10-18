@@ -3,14 +3,17 @@ import '../models/order.dart';
 import '../models/rug_item.dart';
 import 'app_state.dart';
 
-/// Štirje zavihki strani Naročila so dejanski koraki proizvodnje (QA v4 §1/§3):
+/// Pet zavihkov strani Naročila, vsi na isti ravni (V8 §1):
 ///
-/// * **Naročila** in **Pripravljeno** prikazujeta cela naročila,
+/// * **Naročila**, **Pripravljeno** in **Dostave** prikazujejo cela naročila,
 /// * **Čaka pranje** in **Sušenje** prikazujeta posamezne kose, grupirane po
 ///   naročilu — pri pranju in sušenju delamo s posameznim tepihom.
 ///
+/// **Dostave** je manifest robe v kombiju: samo naročila za dostavo, ki so bila
+/// označena V kombi. Brez tega ostanejo v Pripravljeno.
+///
 /// Zaključena naročila tu niso prikazana — najdeš jih v zgodovini stranke.
-enum OrderPhase { intake, washing, drying, ready }
+enum OrderPhase { intake, washing, drying, ready, deliveries }
 
 extension OrderPhaseX on OrderPhase {
   String get label => switch (this) {
@@ -18,6 +21,7 @@ extension OrderPhaseX on OrderPhase {
         OrderPhase.washing => 'Čaka pranje',
         OrderPhase.drying => 'Sušenje',
         OrderPhase.ready => 'Pripravljeno',
+        OrderPhase.deliveries => 'Dostave',
       };
 
   /// Ali zavihek prikazuje posamezne kose (in ne celih naročil).
@@ -32,6 +36,7 @@ extension OrderPhaseX on OrderPhase {
         OrderPhase.drying => item.status == RugStatus.drying ||
             item.status == RugStatus.finishing,
         OrderPhase.ready => item.status == RugStatus.ready,
+        OrderPhase.deliveries => false,
       };
 
   /// Ali se naročilo pokaže v tem zavihku. Naročila in Pripravljeno sta
@@ -41,7 +46,9 @@ extension OrderPhaseX on OrderPhase {
     if (!order.status.isOpen) return false;
     return switch (this) {
       OrderPhase.intake => order.status == OrderStatus.scheduledPickup,
-      OrderPhase.ready => order.status.isHandoverReady,
+      // Pripravljeno: v celoti pripravljeno in še ne v kombiju.
+      OrderPhase.ready => order.status.isHandoverReady && !order.isInVan,
+      OrderPhase.deliveries => order.isInVan,
       _ => items.any(containsItem),
     };
   }
@@ -154,3 +161,21 @@ String foldForSearch(String s) => s
     .replaceAll('š', 's')
     .replaceAll('ž', 'z')
     .replaceAll('đ', 'd');
+
+/// Števci ob zavihkih: pri Čaka pranje / Sušenje so to kosi, drugje naročila.
+Map<OrderPhase, int> phaseCounts(AppState state, {OrderChannel? channel}) {
+  final counts = {for (final p in OrderPhase.values) p: 0};
+  for (final order in state.orders) {
+    if (!order.status.isOpen) continue;
+    if (channel != null && order.channel != channel) continue;
+    final items = state.itemsOf(order.id);
+    for (final p in OrderPhase.values) {
+      if (p.showsItems) {
+        counts[p] = counts[p]! + items.where(p.containsItem).length;
+      } else if (p.containsOrder(order, items)) {
+        counts[p] = counts[p]! + 1;
+      }
+    }
+  }
+  return counts;
+}

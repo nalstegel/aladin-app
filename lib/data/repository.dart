@@ -209,6 +209,7 @@ class Repository extends StateNotifier<AppState> {
     DateTime? pickupWindowEnd,
     DateTime? deliveryAt,
     DateTime? dueAt,
+    double deliveryFee = 0,
     String notes = '',
     List<String> conditions = const [],
   }) {
@@ -216,10 +217,9 @@ class Repository extends StateNotifier<AppState> {
     final id = buildOrderId(location, seq);
     final now = DateTime.now();
 
-    // Vsako novo naročilo začne v zavihku "Naročila" (QA v4 §2): v "Čaka
-    // pranje" gre šele, ko natisnemo etikete ali ga označimo kot prevzetega
-    // — tudi Pripeljano, sicer bi naročilo za prihodnji datum ali brez
-    // natisnjenih etiket izginilo iz prvega zavihka.
+    // Vsako novo naročilo začne v zavihku "Naročila": v "Čaka pranje" gre
+    // šele s potrditvijo fizičnega prevzema (V8 §2) — tudi Pripeljano. Tisk
+    // ali ponatis etikete statusa nikoli ne spremeni.
     const startStatus = RugStatus.awaitingPickup;
 
     final order = WorkOrder(
@@ -237,6 +237,7 @@ class Repository extends StateNotifier<AppState> {
       pickupWindowEnd: pickupWindowEnd,
       deliveryAt: deliveryAt,
       dueAt: dueAt,
+      deliveryFee: deliveryFee,
       notes: notes.trim(),
       createdAt: now,
       createdByName: _actor.name,
@@ -270,6 +271,8 @@ class Repository extends StateNotifier<AppState> {
           location == OrderLocation.ljubljana ? seq + 1 : null,
       nextOrderSeqMaribor: location == OrderLocation.maribor ? seq + 1 : null,
       nextOrderSeqCelje: location == OrderLocation.celje ? seq + 1 : null,
+      nextOrderSeqDolenjska:
+          location == OrderLocation.dolenjska ? seq + 1 : null,
     ));
     return order;
   }
@@ -376,10 +379,56 @@ class Repository extends StateNotifier<AppState> {
     _commit(_recompute(state.copyWith(items: items), orderId));
   }
 
-  /// Etikete so natisnjene → preproge so fizično pri nas in gredo v proces
-  /// (QA v4 §2). Ponovni tisk že prevzetih kosov ne premakne nikamor.
-  void markLabelsPrinted(String orderId) =>
-      markOrderPickedUp(orderId, note: 'Etikete natisnjene');
+  /// Potrditev fizičnega prevzema (V8 §2): doplačila, ki jih delavec dejansko
+  /// vidi, se zapišejo na naročilo (Vnos/Iznos) in na kose (Urin/Dlake), šele
+  /// nato kosi preidejo v Čaka pranje. Hitri obračun jih pozneje samo pokaže
+  /// že označena in izračuna Urin po izmerjenih m².
+  void confirmPickup(
+    String orderId, {
+    List<AppliedExtra> orderExtras = const [],
+    Map<String, List<AppliedExtra>> itemExtras = const {},
+    String note = 'Prevzeto pri stranki',
+  }) {
+    final order = state.order(orderId);
+    if (order == null) return;
+    final now = DateTime.now();
+
+    final items = state.items.map((i) {
+      if (i.orderId != orderId || i.status != RugStatus.awaitingPickup) return i;
+      return i.copyWith(
+        status: RugStatus.awaitingWash,
+        extras: itemExtras[i.id] ?? i.extras,
+        history: [..._event(i, RugStatus.awaitingWash, now, note)],
+      );
+    }).toList();
+    final orders = state.orders
+        .map((o) => o.id == orderId ? o.copyWith(orderExtras: orderExtras) : o)
+        .toList();
+    _commit(_recompute(state.copyWith(items: items, orders: orders), orderId));
+  }
+
+  /// Stranko smo poklicali (osebni prevzem): prvi klic se zabeleži, ponovni
+  /// ne prepiše časa — vrstica kaže "Klicano 6. 10. 14:30".
+  void markCalled(String orderId) {
+    final order = state.order(orderId);
+    if (order == null || order.calledAt != null) return;
+    updateOrder(order.copyWith(calledAt: DateTime.now()));
+  }
+
+  /// Naročilo za dostavo gre v kombi → prestavi se v zavihek Dostave.
+  void sendToVan(String orderId) {
+    final order = state.order(orderId);
+    if (order == null || order.status != OrderStatus.awaitingDelivery) return;
+    if (order.inVanAt != null) return;
+    updateOrder(order.copyWith(inVanAt: DateTime.now()));
+  }
+
+  /// Undo: naročilo ni šlo v kombi — nazaj v Pripravljeno.
+  void removeFromVan(String orderId) {
+    final order = state.order(orderId);
+    if (order == null || order.inVanAt == null) return;
+    updateOrder(order.copyWith(clearInVanAt: true));
+  }
 
   // ---------------------------------------------------------------- preproge
 
@@ -413,7 +462,9 @@ class Repository extends StateNotifier<AppState> {
   /// Vrne nov status ali null, če koraka ni mogoče izvesti samodejno
   /// (npr. potrebni so mere ali potrditev cene).
   RugStatus? nextStatusFor(RugItem item) => switch (item.status) {
-        RugStatus.awaitingPickup => RugStatus.awaitingWash,
+        // Prevzem ni samodejen korak: zahteva potrditev z doplačili
+        // (`confirmPickup`), skeniranje ali tisk ga ne smeta preskočiti.
+        RugStatus.awaitingPickup => null,
         RugStatus.awaitingWash => RugStatus.drying,
         // Naslednja koraka zahtevata vnos — obravnava ju UI.
         RugStatus.drying => null,
@@ -432,6 +483,17 @@ class Repository extends StateNotifier<AppState> {
       status: next,
       history: _event(item, next, DateTime.now(), note),
     ));
+    return true;
+  }
+
+  /// Undo zadnjega samodejnega premika (po skeniranju): kos se vrne v
+  /// prejšnji status, zadnji dogodek zgodovine pa se izbriše, da v zgodovini
+  /// ne ostane šum. Vrne false, če kosa ni mogoče vrniti.
+  bool undoAdvance(String itemId) {
+    final item = state.item(itemId);
+    if (item == null || item.history.length < 2) return false;
+    final history = item.history.sublist(0, item.history.length - 1);
+    _saveItem(item.copyWith(status: history.last.status, history: history));
     return true;
   }
 
@@ -710,11 +772,24 @@ class Repository extends StateNotifier<AppState> {
       readyAt = null;
     }
 
-    if (next == order.status && readyAt == order.readyAt) return s;
+    // Kombi in klic veljata samo, dokler je naročilo pripravljeno za predajo:
+    // če se kos vrne v pranje, mora naročilo ob naslednji pripravljenosti spet
+    // skozi V kombi / Pokliči.
+    final keepVan = next == OrderStatus.awaitingDelivery;
+    final keepCall = next.isHandoverReady || next == OrderStatus.completed;
+
+    if (next == order.status &&
+        readyAt == order.readyAt &&
+        (keepVan || order.inVanAt == null) &&
+        (keepCall || order.calledAt == null)) {
+      return s;
+    }
     orders[oi] = order.copyWith(
       status: next,
       readyAt: readyAt,
       clearReadyAt: readyAt == null,
+      clearInVanAt: !keepVan && next != OrderStatus.completed,
+      clearCalledAt: !keepCall,
     );
     return s.copyWith(orders: orders);
   }

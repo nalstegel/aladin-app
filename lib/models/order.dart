@@ -1,5 +1,9 @@
+import 'catalog.dart';
 import 'enums.dart';
 import 'return_proof.dart';
+
+/// Privzeti rok vračila po pripravljenosti (V8 §4).
+const returnReminderDays = 10;
 
 /// Naročilo — skupek preprog ene stranke. Status se vedno izpelje iz kosov.
 class WorkOrder {
@@ -46,6 +50,25 @@ class WorkOrder {
   final DateTime? completedAt;
   final ReturnProof? returnProof;
 
+  /// Dostavno doplačilo pri našem prevzemu (10–50 € v korakih po 5 €); 0 =
+  /// brez. Šteje v znesek naročila kot ločena vrstica (V8 §2).
+  final double deliveryFee;
+
+  /// Doplačila na celo naročilo, vnesena ob fizičnem prevzemu (Vnos, Iznos).
+  /// So informacija prevzema — v obračunu kosa jih ni, samo se prenesejo v
+  /// končni znesek naročila.
+  final List<AppliedExtra> orderExtras;
+
+  /// Kdaj je bilo naročilo za dostavo naloženo v kombi. Ni status kosa
+  /// (status naročila se izpelje iz kosov), ampak zastavica, ki naročilo
+  /// premakne iz Pripravljeno v Dostave. `Repository._recompute` jo počisti,
+  /// ko naročilo ni več pripravljeno za dostavo.
+  final DateTime? inVanAt;
+
+  /// Kdaj smo poklicali stranko, da lahko pride po preproge (osebni prevzem).
+  /// Zabeleži se prvi klic.
+  final DateTime? calledAt;
+
   const WorkOrder({
     required this.id,
     required this.location,
@@ -67,6 +90,10 @@ class WorkOrder {
     this.readyAt,
     this.completedAt,
     this.returnProof,
+    this.deliveryFee = 0,
+    this.orderExtras = const [],
+    this.inVanAt,
+    this.calledAt,
   });
 
   String get number => id;
@@ -82,6 +109,14 @@ class WorkOrder {
     if (status != OrderStatus.scheduledPickup || pickupAt == null) return false;
     return now.isAfter(pickupWindowEnd ?? pickupAt!);
   }
+
+  /// Naročilo je naloženo v kombi in čaka na vračilo na naslov.
+  bool get isInVan => status == OrderStatus.awaitingDelivery && inVanAt != null;
+
+  /// Nevsiljiv interni opomnik, kdaj naj bi bilo naročilo vrnjeno (privzeto
+  /// 10 dni po pripravljenosti). Ni alarm — samo siva opomba na seznamu.
+  DateTime? get returnReminderAt =>
+      readyAt?.add(const Duration(days: returnReminderDays));
 
   WorkOrder copyWith({
     OrderChannel? channel,
@@ -100,6 +135,12 @@ class WorkOrder {
     DateTime? readyAt,
     DateTime? completedAt,
     ReturnProof? returnProof,
+    double? deliveryFee,
+    List<AppliedExtra>? orderExtras,
+    DateTime? inVanAt,
+    DateTime? calledAt,
+    bool clearInVanAt = false,
+    bool clearCalledAt = false,
     bool clearReadyAt = false,
     bool clearPickupAt = false,
     bool clearPickupWindowEnd = false,
@@ -129,6 +170,10 @@ class WorkOrder {
       readyAt: clearReadyAt ? null : (readyAt ?? this.readyAt),
       completedAt: completedAt ?? this.completedAt,
       returnProof: returnProof ?? this.returnProof,
+      deliveryFee: deliveryFee ?? this.deliveryFee,
+      orderExtras: orderExtras ?? this.orderExtras,
+      inVanAt: clearInVanAt ? null : (inVanAt ?? this.inVanAt),
+      calledAt: clearCalledAt ? null : (calledAt ?? this.calledAt),
     );
   }
 
@@ -153,6 +198,10 @@ class WorkOrder {
         'readyAt': readyAt?.toIso8601String(),
         'completedAt': completedAt?.toIso8601String(),
         'returnProof': returnProof?.toJson(),
+        'deliveryFee': deliveryFee,
+        'orderExtras': orderExtras.map((e) => e.toJson()).toList(),
+        'inVanAt': inVanAt?.toIso8601String(),
+        'calledAt': calledAt?.toIso8601String(),
       };
 
   factory WorkOrder.fromJson(Map<String, dynamic> j) {
@@ -184,6 +233,12 @@ class WorkOrder {
       returnProof: j['returnProof'] == null
           ? null
           : ReturnProof.fromJson(j['returnProof'] as Map<String, dynamic>),
+      deliveryFee: (j['deliveryFee'] as num?)?.toDouble() ?? 0,
+      orderExtras: (j['orderExtras'] as List? ?? [])
+          .map((e) => AppliedExtra.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      inVanAt: d('inVanAt'),
+      calledAt: d('calledAt'),
     );
   }
 }

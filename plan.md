@@ -767,6 +767,76 @@ Firestoreju, seed je samo demo. Administrator v Več naredi:
 **Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
 `flutter analyze` + testi, ne pa vizualno.
 
+### 4.11 — Clean UX V8 (PDF "ALADIN_APP_CLEAN_UX_V8_FINAL") — DONE v kodi (2026-10-18)
+Veja `feature/ux-v8` (V4 je commitan na `fix/qa-v4`). Odločitve, potrjene z
+lastnikom pred implementacijo, so označene z ✔.
+
+**Potek:** Danes / Hiter vnos → Naročila → Čaka pranje → Sušenje →
+Pripravljeno → Dostave → Predaja / podpis.
+
+- ✔ **Regija DOL** je četrta `OrderLocation` (`dolenjska`, koda `DOL`) z lastnim
+  števcem (`nextOrderSeqDolenjska`, `meta/counters` v Firestoreju, stari
+  dokumenti brez polja → 1). ID-ji `DOL-001-1`. V Hitrem vnosu in Novem naročilu
+  se regija izbira s kodami LJ/MB/CE/DOL (napis "Regija", ne več "Območje").
+- ✔ **Tisk ni prevzem** (obrne QA v4 §2): `markLabelsPrinted` je odstranjen.
+  Kosi gredo iz `awaitingPickup` samo prek `Repository.confirmPickup` — sheet
+  `ui/orders/pickup_sheet.dart` ("Prevzeto pri stranki"). `nextStatusFor`
+  za `awaitingPickup` vrne null, skeniranje takega kosa odpre sheet.
+  Pripeljano: ustvari → sheet → etikete (`continueAfterOrderCreated`); Naš
+  prevzem: ustvari → etikete.
+- ✔ **Doplačila ob prevzemu:** Vnos/Iznos +5 € na naročilo
+  (`WorkOrder.orderExtras`), Urin (3 €/m²) in Dlake (5/10 €) kot oznaka na
+  kosu (`RugItem.extras`) — znesek Urina se izračuna šele ob obračunu po
+  izmerjenih m². Prepoznava po imenu iz šifranta (`orderLevelExtraNames`,
+  `itemPickupExtraNames`, vgrajeni `fallback*` če jih lastnik izbriše).
+  Vnos/Iznos sta skrita v Hitrem obračunu (`ExtraTemplate.isOrderLevel`).
+- ✔ **Dostavno doplačilo** (`WorkOrder.deliveryFee`, 10–50 € po 5 €, 0 = brez):
+  stepper pri Našem prevzemu v Hitrem vnosu, Novem naročilu in Uredi naročilo.
+- ✔ **Obračun naročila** (`lib/data/billing.dart`, `AppState.billing/orderTotal`):
+  kosi + Vnos/Iznos + dostava + **minimum 50 €** (samo kanal `delivery`, šele ko
+  so vsi kosi obračunani; razlika je ločena vrstica, cena kosa ostane ročno
+  popravljiva). Prikazano v Hitrem obračunu (povzetek naročila) in v podrobnostih.
+- **Home (Danes):** Hiter vnos + štirje privzeto zaprti bloki s števcem —
+  Prevzemi danes, Vračila danes (V kombiju ali termin danes), Delavnica
+  (števci Čaka pranje/Sušenje/Pripravljeno/Dostave → odpre zavihek prek
+  `ordersPhaseRequestProvider`), Potrebna akcija (prevzem zamuja, Ni klicano,
+  kosi obtičali v "Mere in cena"). Največ 5 vrstic na blok. Stare ploščice in
+  seznami odstranjeni. Hiter vnos ima povezavo na polni obrazec (B2B…), ker
+  FAB na Naročilih ne obstaja več.
+- **5 top-level zavihkov** (`OrderPhase.deliveries` dodan), števci ob zavihkih
+  (`phaseCounts`): kosi pri Čaka pranje/Sušenje, naročila drugje. Brez + gumba.
+- ✔ **Pripravljeno** je en seznam brez pod-zavihkov: *Ni klicano* → klik na
+  telefon/Pokliči zabeleži `calledAt` (prvi klic) → *Klicano · čaka stranko*;
+  *Za dostavo* z gumbom **V kombi**. Rok vračila = `readyAt` + 10 dni
+  (`returnReminderDays`), siva opomba.
+- ✔ **V kombi** je zastavica `WorkOrder.inVanAt` (ne status): `_recompute` jo (in
+  `calledAt`) počisti, ko naročilo ni več pripravljeno za predajo. **Dostave** =
+  samo `isInVan`; filtri Vse/LJ/MB/CE/DOL, telefon = klic, naslov = Maps,
+  **Odpri pot** (Google Maps, do 10 postankov iz trenutno filtriranega
+  seznama), Vrni (ReturnFlow) in Iz kombija (undo).
+- **Brez "Zamuja":** odstranjeno z OrderCard, Home in iz zvonca (`AlertKind`
+  ima samo `readyForHandover`). Rdeče je samo še zamujen naš prevzem.
+- **Skeniranje:** hitri način je privzeto vklopljen; premik ima haptic +
+  **Razveljavi** (`Repository.undoAdvance`). V Sušenju QR še vedno odpre Hitri
+  obračun (nikoli ne preskoči).
+- **Etikete** (`labelKindFor` + `buildLabelZpl(kind: …)`): regija (MB/CE/DOL,
+  ne glede na način) = velika oznaka + x/4 + ime/telefon + QR; LJ dostava =
+  velik ID naročila (LJ-099) + 3/4 + QR, manjše ime; LJ Pripeljano = veliko ime
+  + telefon + 3/4 + QR. Brez prevzemne točke in brez mer. QR vsebuje še vedno
+  polni ID kosa. **Print all** + **Natisni izbrane** (izbira kosov na
+  predogledu) + ponatis iz podrobnosti kosa. **Še ni natisnjeno na pravem
+  ZD230** — preveri, da se regijska oznaka (font 100) in ime prilegata 40 mm.
+- ✔ Seed: vrste "Navadna / sintetika", Shaggy, Volna, "Perzijska / ročno
+  vozlana", doplačilo "Ponovno pranje" (+30 %). Šifrant v Firestoreju
+  (lastnik v aplikaciji) se NE spremeni sam — preimenuj ročno v Več.
+- ✔ Izpuščeno ("Kasneje" v PDF): autocomplete naslovov, review QR + SMS,
+  plačano/neplačano.
+
+**Testi:** `test/v8_flow_test.dart` (DOL, prevzem z doplačili, obračun +
+minimum, V kombi/Dostave, Klicano, Undo), `test/zpl_test.dart` prepisan.
+**Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
+`flutter analyze` + testi, ne pa vizualno.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.

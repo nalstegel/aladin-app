@@ -7,15 +7,18 @@ import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/customer.dart';
 import '../../models/enums.dart';
-import '../orders/labels_screen.dart';
+import '../orders/new_order_screen.dart';
+import '../orders/pickup_sheet.dart';
 import '../widgets/common.dart';
+import '../widgets/delivery_fee_stepper.dart';
 import '../widgets/pickup_window_picker.dart';
 
-/// Hiter vnos naročila na vrhu Danes (v3 spec §1): telefon → stranka →
-/// Pripeljano/Naš prevzem → število kosov → Ustvari naročilo.
+/// Hiter vnos naročila na vrhu Danes (v3 spec §1, V8 §1): telefon → ime →
+/// Pripeljano/Naš prevzem → regija → število kosov → Ustvari naročilo. To je
+/// edino glavno mesto za ustvarjanje naročil; na strani Naročila ni + gumba.
 ///
-/// Za vse ostalo (B2B, opombe, poljubni datumi) ostaja polni obrazec za
-/// Novo naročilo, dosegljiv prek FAB na Naročilih.
+/// Za vse ostalo (B2B, opombe, poljubni datumi) ostaja polni obrazec za Novo
+/// naročilo, dosegljiv iz povezave na dnu tega kartona.
 class QuickOrderCard extends ConsumerStatefulWidget {
   const QuickOrderCard({super.key});
 
@@ -37,6 +40,7 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
   OrderChannel _channel = OrderChannel.dropoff;
   OrderLocation _location = OrderLocation.ljubljana;
   int _itemCount = 1;
+  double _deliveryFee = 0;
   DateTime _pickupDate = DateTime.now();
   TimeOfDay? _pickupStart;
   TimeOfDay? _pickupEnd;
@@ -165,17 +169,17 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
           onSelectionChanged: (s) => setState(() => _channel = s.first),
         ),
         const SizedBox(height: 12),
-        const Text('Območje', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+        const Text('Regija', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         SegmentedButton<OrderLocation>(
           segments: [
             for (final l in OrderLocation.values)
               ButtonSegment(
                 value: l,
-                label: Text(l.label, maxLines: 1, softWrap: false),
+                label: Text(l.code, maxLines: 1, softWrap: false),
               ),
           ],
-          // Brez kljukice — sicer "Ljubljana" nima prostora in se prelomi.
+          // Brez kljukice — sicer oznaka nima prostora in se prelomi.
           showSelectedIcon: false,
           selected: {_location},
           onSelectionChanged: (s) => setState(() => _location = s.first),
@@ -225,6 +229,11 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
               _pickupEnd = end;
             }),
           ),
+          const SizedBox(height: 12),
+          DeliveryFeeStepper(
+            value: _deliveryFee,
+            onChanged: (v) => setState(() => _deliveryFee = v),
+          ),
         ],
         const SizedBox(height: 14),
         Row(
@@ -262,6 +271,15 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
             onPressed: _canSubmit ? _submit : null,
             icon: const Icon(Icons.check),
             label: Text('Ustvari naročilo · ${Fmt.pieces(_itemCount)}'),
+          ),
+        ),
+        Center(
+          child: TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NewOrderScreen()),
+            ),
+            child: const Text('Polni obrazec (B2B, opombe, drugi termini)'),
           ),
         ),
       ],
@@ -391,9 +409,9 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
       pickupAt: pickupAt,
       pickupWindowEnd: pickupWindowEnd,
       dueAt: DateTime.now().add(const Duration(days: 7)),
+      deliveryFee: _channel == OrderChannel.delivery ? _deliveryFee : 0,
     );
 
-    final orderId = order.id;
     setState(() {
       _phone.clear();
       _name.clear();
@@ -404,16 +422,13 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
       _forceNewCustomer = false;
       _channel = OrderChannel.dropoff;
       _itemCount = 1;
+      _deliveryFee = 0;
       _pickupStart = null;
       _pickupEnd = null;
       _expanded = false;
     });
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LabelsScreen(orderId: orderId, isNew: true),
-      ),
-    );
+    // Pripeljano: najprej hiter korak prevzema, nato etikete (V8 §2).
+    continueAfterOrderCreated(context, order);
   }
 }

@@ -32,12 +32,13 @@ class OrderCard extends ConsumerWidget {
     final items = state.itemsOf(order.id);
     final progress = StageProgress.of(items);
     final now = DateTime.now();
-    final overdue = order.isOverdue(now);
     // Naročilo, ki čaka naš planiran prevzem, je normalno stanje: preproga je
     // še pri stranki. Rdeče postane šele, ko je termin prevzema mimo (QA v4 §8).
     final pendingIntake = order.status == OrderStatus.scheduledPickup;
     final pickupLate = order.isPickupOverdue(now);
-    final flagged = overdue || pickupLate;
+    // Rdeče samo za resnično težavo: zamujen naš prevzem. Rok vračila je
+    // nevsiljiv opomnik, "Zamuja" je nadomestil "Klicano" (V8 §4).
+    final flagged = pickupLate;
     final accent = flagged
         ? AppColors.danger
         : pendingIntake
@@ -135,17 +136,7 @@ class OrderCard extends ConsumerWidget {
               ],
             ],
           ),
-          if (overdue) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Zamuja ${_overdueBy()} · rok ${Fmt.dateShort(order.dueAt)}',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.danger,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ] else if (pickupLate) ...[
+          if (pickupLate) ...[
             const SizedBox(height: 6),
             Text(
               'Prevzem zamuja · termin ${_pickupSlot()}',
@@ -159,17 +150,6 @@ class OrderCard extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  String _overdueBy() {
-    final due = order.dueAt;
-    if (due == null) return '—';
-    final days = DateTime.now().difference(due).inDays;
-    if (days <= 0) return 'manj kot dan';
-    if (days == 1) return '1 dan';
-    if (days == 2) return '2 dni';
-    if (days == 3 || days == 4) return '$days dni';
-    return '$days dni';
   }
 
   String _pickupSlot() => '${Fmt.dayHeader(order.pickupAt!)} '

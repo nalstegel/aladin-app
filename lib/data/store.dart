@@ -151,6 +151,8 @@ class FirestoreStore implements DataStore {
           (counters.data()?['nextOrderSeqMaribor'] as num?)?.toInt() ?? 1,
       nextOrderSeqCelje:
           (counters.data()?['nextOrderSeqCelje'] as num?)?.toInt() ?? 1,
+      nextOrderSeqDolenjska:
+          (counters.data()?['nextOrderSeqDolenjska'] as num?)?.toInt() ?? 1,
     );
     _lastSaved = state;
     return state;
@@ -173,6 +175,7 @@ class FirestoreStore implements DataStore {
     int? nextOrderSeqLjubljana;
     int? nextOrderSeqMaribor;
     int? nextOrderSeqCelje;
+    int? nextOrderSeqDolenjska;
 
     late final StreamController<AppState> controller;
     final subs = <StreamSubscription<dynamic>>[];
@@ -187,7 +190,8 @@ class FirestoreStore implements DataStore {
           users == null ||
           nextOrderSeqLjubljana == null ||
           nextOrderSeqMaribor == null ||
-          nextOrderSeqCelje == null) {
+          nextOrderSeqCelje == null ||
+          nextOrderSeqDolenjska == null) {
         return;
       }
       final state = AppState(
@@ -200,6 +204,7 @@ class FirestoreStore implements DataStore {
         nextOrderSeqLjubljana: nextOrderSeqLjubljana!,
         nextOrderSeqMaribor: nextOrderSeqMaribor!,
         nextOrderSeqCelje: nextOrderSeqCelje!,
+        nextOrderSeqDolenjska: nextOrderSeqDolenjska!,
       );
       // Osnova za primerjavo pri naslednjem shranjevanju: objekti v tem
       // stanju so iste instance, ki jih bo Repository nosil naprej, zato
@@ -245,6 +250,9 @@ class FirestoreStore implements DataStore {
           nextOrderSeqCelje =
               (d.data()?['nextOrderSeqCelje'] as num?)?.toInt() ??
                   const AppState().nextOrderSeqCelje;
+          nextOrderSeqDolenjska =
+              (d.data()?['nextOrderSeqDolenjska'] as num?)?.toInt() ??
+                  const AppState().nextOrderSeqDolenjska;
           emit();
         }, onError: controller.addError),
       ]);
@@ -330,13 +338,15 @@ class FirestoreStore implements DataStore {
 
     if (state.nextOrderSeqLjubljana != _lastSaved.nextOrderSeqLjubljana ||
         state.nextOrderSeqMaribor != _lastSaved.nextOrderSeqMaribor ||
-        state.nextOrderSeqCelje != _lastSaved.nextOrderSeqCelje) {
+        state.nextOrderSeqCelje != _lastSaved.nextOrderSeqCelje ||
+        state.nextOrderSeqDolenjska != _lastSaved.nextOrderSeqDolenjska) {
       batch.set(
         _counters,
         {
           'nextOrderSeqLjubljana': state.nextOrderSeqLjubljana,
           'nextOrderSeqMaribor': state.nextOrderSeqMaribor,
           'nextOrderSeqCelje': state.nextOrderSeqCelje,
+          'nextOrderSeqDolenjska': state.nextOrderSeqDolenjska,
         },
         SetOptions(merge: true),
       );

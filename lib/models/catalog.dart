@@ -145,3 +145,31 @@ class AppliedExtra {
   factory AppliedExtra.fromTemplate(ExtraTemplate t, {double? value}) =>
       AppliedExtra(name: t.name, kind: t.kind, value: value ?? t.value);
 }
+
+/// Doplačila, ki se vnesejo ob fizičnem prevzemu (V8 §2) — ne v hitrem
+/// obračunu. Vnos in Iznos veljata za celo naročilo, Urin in Dlake za kos.
+/// Prepoznana so po imenu iz šifranta; če jih lastnik izbriše, ima prevzem
+/// vgrajeno privzeto vrednost, da potek dela ne obstane.
+const orderLevelExtraNames = {'Vnos', 'Iznos'};
+const itemPickupExtraNames = {'Urin', 'Dlake'};
+
+extension ExtraTemplateX on ExtraTemplate {
+  /// Vnos / Iznos: samo ob prevzemu, nikoli na zaslonu Hitrega obračuna.
+  bool get isOrderLevel => orderLevelExtraNames.contains(name);
+}
+
+const fallbackOrderExtras = [
+  ExtraTemplate(id: 'e-vnos', name: 'Vnos', kind: ExtraKind.fixed, value: 5),
+  ExtraTemplate(id: 'e-iznos', name: 'Iznos', kind: ExtraKind.fixed, value: 5),
+];
+
+const fallbackItemExtras = [
+  ExtraTemplate(id: 'e-urin', name: 'Urin', kind: ExtraKind.perM2, value: 3),
+  ExtraTemplate(
+    id: 'e-dlake',
+    name: 'Dlake',
+    kind: ExtraKind.fixed,
+    value: 5,
+    choices: [5, 10],
+  ),
+];

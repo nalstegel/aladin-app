@@ -49,7 +49,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ? const EmptyState(
               icon: Icons.notifications_none,
               title: 'Ni obvestil',
-              message: 'Tu se pojavijo pripravljena naročila in zamude.',
+              message: 'Tu se pojavijo pripravljena naročila.',
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -57,9 +57,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
                 final a = alerts[i];
-                final color = a.kind == AlertKind.overdue
-                    ? AppColors.danger
-                    : AppColors.ready;
+                const color = AppColors.ready;
                 final unread = _unreadOnOpen.contains(a.id);
 
                 return AppCard(
@@ -72,10 +70,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        a.kind == AlertKind.overdue
-                            ? Icons.warning_amber_rounded
-                            : Icons.check_circle_outline,
+                      const Icon(
+                        Icons.check_circle_outline,
                         size: 20,
                         color: color,
                       ),

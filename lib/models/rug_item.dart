@@ -64,6 +64,9 @@ class RugItem {
 
   String get label => 'KOS $index/$ofTotal';
 
+  /// Kratka oznaka na nalepki: "3/4".
+  String get pieceLabel => '$index/$ofTotal';
+
   /// Enako kot [orderId] — ohranjeno kot getter, ker ga UI že uporablja za
   /// prikaz. Prej je parsiral [id] (`id.split('-').first`), kar se je
   /// pokvarilo, ko so ID-ji naročil sami dobili vezaj (npr. "LJ-001").

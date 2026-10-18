@@ -22,3 +22,28 @@ Future<bool> openMaps(String address) {
         });
   return launchUrl(uri, mode: LaunchMode.externalApplication);
 }
+
+/// Največ postankov na eni poti v Google Maps (cilj + 9 vmesnih).
+const maxRouteStops = 10;
+
+/// Odpre pot z več postanki (današnji naslovi iz Dostav). Začne na trenutni
+/// lokaciji. Google Maps URL prenese največ [maxRouteStops] naslovov — klicatelj
+/// je odgovoren, da jih ne pošlje več.
+Future<bool> openMapsRoute(List<String> addresses) {
+  final stops = addresses
+      .map((a) => a.trim())
+      .where((a) => a.isNotEmpty)
+      .take(maxRouteStops)
+      .toList();
+  if (stops.isEmpty) return Future.value(false);
+  final params = <String, String>{
+    'api': '1',
+    'destination': stops.last,
+    'travelmode': 'driving',
+    if (stops.length > 1) 'waypoints': stops.sublist(0, stops.length - 1).join('|'),
+  };
+  return launchUrl(
+    Uri.https('www.google.com', '/maps/dir/', params),
+    mode: LaunchMode.externalApplication,
+  );
+}

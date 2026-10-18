@@ -15,11 +15,22 @@ import 'order_detail_screen.dart';
 
 /// Etikete za posamezne kose. QR vsebuje ID kosa, npr. "LJ-001-2",
 /// zato skeniranje vedno odpre točno to preprogo.
+///
+/// Tisk ali ponatis etikete NIKOLI ne spremeni statusa (V8 §2) — kosi gredo
+/// v Čaka pranje samo s potrditvijo prevzema.
 class LabelsScreen extends ConsumerStatefulWidget {
-  const LabelsScreen({super.key, required this.orderId, this.isNew = false});
+  const LabelsScreen({
+    super.key,
+    required this.orderId,
+    this.isNew = false,
+    this.onlyItemId,
+  });
 
   final String orderId;
   final bool isNew;
+
+  /// Če je podan, je ob odprtju izbran samo ta kos (individualni ponatis).
+  final String? onlyItemId;
 
   @override
   ConsumerState<LabelsScreen> createState() => _LabelsScreenState();
@@ -28,27 +39,47 @@ class LabelsScreen extends ConsumerStatefulWidget {
 class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   bool _printing = false;
 
-  Future<void> _print(WorkOrder order, List<RugItem> items) async {
+  /// Izbrani kosi za "Natisni izbrane". null = še ni dotika, torej vsi (ali
+  /// samo [LabelsScreen.onlyItemId]).
+  Set<String>? _selected;
+
+  Set<String> _selection(List<RugItem> items) {
+    final s = _selected;
+    if (s != null) return s;
+    final only = widget.onlyItemId;
+    if (only != null && items.any((i) => i.id == only)) return {only};
+    return {for (final i in items) i.id};
+  }
+
+  void _toggle(RugItem item, List<RugItem> items) {
+    final current = {..._selection(items)};
+    if (!current.remove(item.id)) current.add(item.id);
+    setState(() => _selected = current);
+  }
+
+  Future<void> _print(WorkOrder order, List<RugItem> toPrint) async {
+    if (toPrint.isEmpty) return;
     setState(() => _printing = true);
     try {
-      final zpl = items
+      final kind = labelKindFor(
+        location: order.location,
+        channel: order.channel,
+      );
+      final zpl = toPrint
           .map((item) => buildLabelZpl(
-                customerName: order.customerName,
-                dimensions: item.isMeasured
-                    ? Fmt.dimensions(item.widthCm, item.lengthCm)
-                    : '',
+                kind: kind,
                 itemId: item.id,
-                dropoff: order.channel == OrderChannel.dropoff,
+                orderId: order.id,
+                pieceLabel: item.pieceLabel,
+                customerName: order.customerName,
                 phone: Fmt.phone(order.customerPhone),
-                pieceLabel: item.label,
+                regionCode: order.location.code,
               ))
           .join();
       await ref.read(zebraPrinterServiceProvider).print(zpl);
-      // Natisnjene etikete pomenijo, da so preproge pri nas → Čaka pranje.
-      ref.read(repositoryProvider.notifier).markLabelsPrinted(order.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${items.length} etiket poslanih na tiskalnik.')),
+          SnackBar(content: Text('${toPrint.length} etiket poslanih na tiskalnik.')),
         );
       }
     } catch (e) {
@@ -70,6 +101,18 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
       return const Scaffold(body: Center(child: Text('Naročilo ne obstaja')));
     }
     final items = state.itemsOf(widget.orderId);
+    final selection = _selection(items);
+    final selectedItems = [
+      for (final i in items)
+        if (selection.contains(i.id)) i,
+    ];
+    final kind = labelKindFor(location: order.location, channel: order.channel);
+
+    final spinner = const SizedBox(
+      width: 18,
+      height: 18,
+      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -85,7 +128,7 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
             : null,
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 130),
         children: [
           if (widget.isNew)
             AppCard(
@@ -106,11 +149,10 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        Text(
+                        const Text(
                           'Natisni etikete in jih pripni na preproge. '
-                          'Dokler etikete niso natisnjene, naročilo '
-                          'ostane v zavihku Naročila.',
-                          style: const TextStyle(
+                          'Tisk ne spremeni statusa naročila.',
+                          style: TextStyle(
                             fontSize: 13,
                             color: AppColors.textMuted,
                           ),
@@ -121,7 +163,22 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                 ],
               ),
             ),
-          const SectionHeader('Predogled'),
+          SectionHeader(
+            'Predogled',
+            subtitle: items.length > 1
+                ? 'Tapni etiketo za izbiro — ponatis posameznega kosa.'
+                : null,
+            trailing: items.length > 1
+                ? Text(
+                    'Izbrano ${selectedItems.length}/${items.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMuted,
+                    ),
+                  )
+                : null,
+          ),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -133,7 +190,41 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
               childAspectRatio: 40 / 60,
             ),
             itemCount: items.length,
-            itemBuilder: (_, i) => _LabelPreview(order: order, item: items[i]),
+            itemBuilder: (_, i) {
+              final item = items[i];
+              final selected = selection.contains(item.id);
+              return GestureDetector(
+                onTap: items.length > 1 ? () => _toggle(item, items) : null,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: selected ? 1 : 0.45,
+                        child: _LabelPreview(
+                          order: order,
+                          item: item,
+                          kind: kind,
+                        ),
+                      ),
+                    ),
+                    if (items.length > 1)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Icon(
+                          selected
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                          size: 22,
+                          color: selected
+                              ? AppColors.primary
+                              : AppColors.textMuted,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -145,38 +236,53 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
         ),
         child: SafeArea(
           top: false,
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.isNew)
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            OrderDetailScreen(orderId: widget.orderId),
+              Row(
+                children: [
+                  if (widget.isNew)
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                OrderDetailScreen(orderId: widget.orderId),
+                          ),
+                        ),
+                        child: const Text('Odpri naročilo'),
                       ),
                     ),
-                    child: const Text('Odpri naročilo'),
+                  if (widget.isNew) const SizedBox(width: 10),
+                  // Print all: cela etiketa naročila, vedno na voljo.
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed:
+                          _printing ? null : () => _print(order, items),
+                      icon: _printing ? spinner : const Icon(Icons.print),
+                      label: Text(
+                        items.length == 1
+                            ? 'Natisni'
+                            : 'Natisni vse · ${items.length}',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (items.length > 1) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _printing || selectedItems.isEmpty
+                        ? null
+                        : () => _print(order, selectedItems),
+                    icon: const Icon(Icons.print_outlined),
+                    label: Text('Natisni izbrane · ${selectedItems.length}'),
                   ),
                 ),
-              if (widget.isNew) const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _printing ? null : () => _print(order, items),
-                  icon: _printing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.print),
-                  label: const Text('Natisni'),
-                ),
-              ),
+              ],
             ],
           ),
         ),
@@ -186,17 +292,20 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
 }
 
 class _LabelPreview extends StatelessWidget {
-  const _LabelPreview({required this.order, required this.item});
+  const _LabelPreview({
+    required this.order,
+    required this.item,
+    required this.kind,
+  });
 
   final WorkOrder order;
   final RugItem item;
+  final LabelKind kind;
 
   @override
   Widget build(BuildContext context) {
     // Postavitev sledi pravi nalepki (`buildLabelZpl`): QR na vrhu, pod njim
-    // besedilo, ki je pri Pripeljano drugačno kot pri Dostavah.
-    final dropoff = order.channel == OrderChannel.dropoff;
-    final dims = item.isMeasured ? Fmt.dimensions(item.widthCm, item.lengthCm) : '';
+    // besedilo glede na vrsto nalepke.
     final phone = Fmt.phone(order.customerPhone);
 
     Widget text(String value, double size,
@@ -205,7 +314,7 @@ class _LabelPreview extends StatelessWidget {
             Color color = AppColors.text,
             double spacing = 0}) =>
         Padding(
-          padding: const EdgeInsets.only(top: 3),
+          padding: const EdgeInsets.only(top: 2),
           child: Text(
             value,
             textAlign: TextAlign.center,
@@ -216,9 +325,31 @@ class _LabelPreview extends StatelessWidget {
               fontWeight: weight,
               color: color,
               letterSpacing: spacing,
+              height: 1.05,
             ),
           ),
         );
+
+    final lines = switch (kind) {
+      LabelKind.region => [
+          text(order.location.code, 34, weight: FontWeight.w900),
+          text(item.pieceLabel, 20, weight: FontWeight.w800),
+          text(order.customerName, 11),
+          if (phone.isNotEmpty) text(phone, 10),
+        ],
+      LabelKind.ljDelivery => [
+          text(order.id, 24, weight: FontWeight.w900),
+          text(item.pieceLabel, 20, weight: FontWeight.w800),
+          text(order.customerName, 10, maxLines: 2),
+          text(item.id, 8, color: AppColors.textMuted),
+        ],
+      LabelKind.dropoff => [
+          text(order.customerName, 14, weight: FontWeight.w800, maxLines: 2),
+          if (phone.isNotEmpty) text(phone, 13, weight: FontWeight.w700),
+          text(item.pieceLabel, 20, weight: FontWeight.w800),
+          text(item.id, 8, color: AppColors.textMuted),
+        ],
+    };
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -231,23 +362,14 @@ class _LabelPreview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           AspectRatio(
-            aspectRatio: 1.25,
+            aspectRatio: 1.4,
             child: QrImageView(
               data: item.id,
               padding: EdgeInsets.zero,
             ),
           ),
-          const SizedBox(height: 6),
-          if (dropoff) ...[
-            text(order.customerName, 14, weight: FontWeight.w800, maxLines: 2),
-            if (phone.isNotEmpty) text(phone, 13, weight: FontWeight.w700),
-            text(item.label, 15, weight: FontWeight.w800),
-            text(item.id, 11, weight: FontWeight.w700, spacing: 1),
-          ] else ...[
-            text(item.id, 18, weight: FontWeight.w900),
-            text(order.customerName, 12, maxLines: 2),
-            if (dims.isNotEmpty) text(dims, 11, color: AppColors.textMuted),
-          ],
+          const SizedBox(height: 4),
+          ...lines,
         ],
       ),
     );

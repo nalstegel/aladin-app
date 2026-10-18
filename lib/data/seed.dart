@@ -25,21 +25,22 @@ AppState buildSeedState() {
     AppUser(id: 'u-ana', name: 'Ana', role: UserRole.worker),
   ];
 
-  // Štiri vrste po v3 spec §4 in pet doplačil po QA v4 §4 (kompaktna mreža
-  // v hitrem obračunu). To so samo demo podatki — pravi šifrant živi v
+  // Štiri vrste po V8 §3 (Navadna / sintetika, Shaggy, Volna, Perzijska /
+  // ročno vozlana) in pet doplačil po QA v4 §4 (Vnos/Iznos sta od V8 samo ob
+  // prevzemu). To so samo demo podatki — pravi šifrant živi v
   // Firestoreju in ga ureja administrator v Več. Id-ji vrst ostajajo stari, da
   // zgodovinski kosi spodaj (rugTypeName/AppliedExtra so lastni posnetki,
   // neodvisni od šifranta) niso prizadeti — glej models/catalog.dart.
   const rugTypes = [
-    RugType(id: 't-sint', name: 'Navadna', pricePerM2: 12, minChargeM2: 3),
+    RugType(id: 't-sint', name: 'Navadna / sintetika', pricePerM2: 12, minChargeM2: 3),
     RugType(id: 't-volna', name: 'Volna', pricePerM2: 15, minChargeM2: 3),
-    RugType(id: 't-perzija', name: 'Perzijska', pricePerM2: 22, minChargeM2: 2),
+    RugType(id: 't-perzija', name: 'Perzijska / ročno vozlana', pricePerM2: 22, minChargeM2: 2),
     RugType(id: 't-shaggy', name: 'Shaggy', pricePerM2: 16, minChargeM2: 3),
   ];
 
   const extras = [
     // Doplačila, usklajena z dejanskim delom (QA v4 §4).
-    ExtraTemplate(id: 'e-pranje', name: 'Dodatno pranje', kind: ExtraKind.percent, value: 30),
+    ExtraTemplate(id: 'e-pranje', name: 'Ponovno pranje', kind: ExtraKind.percent, value: 30),
     ExtraTemplate(id: 'e-urin', name: 'Urin', kind: ExtraKind.perM2, value: 3),
     ExtraTemplate(id: 'e-dlake', name: 'Dlake', kind: ExtraKind.fixed, value: 5, choices: [5, 10]),
     ExtraTemplate(id: 'e-vnos', name: 'Vnos', kind: ExtraKind.fixed, value: 5),
@@ -461,5 +462,6 @@ AppState buildSeedState() {
     nextOrderSeqLjubljana: 7,
     nextOrderSeqMaribor: 1,
     nextOrderSeqCelje: 1,
+    nextOrderSeqDolenjska: 1,
   );
 }
