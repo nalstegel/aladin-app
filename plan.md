@@ -534,6 +534,9 @@ preklop na Blaze, `firebase deploy --only functions`. Na iOS so blokirana
 ### 4.6 — Zebra ZD230 label printing — DONE in code, UNVERIFIED on real hardware (2026-09-17)
 Replaced the A4 PDF label sheet with direct thermal printing on a Zebra
 ZD230 that lives on the shop's LAN. Implementation:
+- **SUPERSEDED (2026-10-21, see §4.11): the label is LANDSCAPE 60×40 mm, not
+  portrait — a photo of a real print proved it. The paragraph below is the
+  old history.**
 - `lib/core/zpl.dart` — pure ZPL template builder (`buildLabelZpl`), no I/O,
   easy to unit-test. Label is **portrait**, 40mm wide × 60mm tall, at 203dpi
   (`labelWidthDots` = 320, `labelHeightDots` = 480 — the only resolution the
@@ -819,13 +822,24 @@ Pripravljeno → Dostave → Predaja / podpis.
 - **Skeniranje:** hitri način je privzeto vklopljen; premik ima haptic +
   **Razveljavi** (`Repository.undoAdvance`). V Sušenju QR še vedno odpre Hitri
   obračun (nikoli ne preskoči).
-- **Etikete** (`labelKindFor` + `buildLabelZpl(kind: …)`): regija (MB/CE/DOL,
+- **Etikete — popravek 2026-10-21: medij je LEŽEČ 60×40 mm** (`labelWidthDots`
+  = 480, `labelHeightDots` = 320). Fotografija prave natisnjene nalepke je
+  pokazala, da QR in besedilo tečejo vzdolž DALJŠE stranice; prejšnja pokončna
+  predpostavka 40×60 (§4.6) je natisnila samo zgornjih ~40 mm in odrezala
+  x/y, ime in ID. Prva (60×40) različica je imela samo premajhno vsebino, ne
+  napačnega medija. Postavitev je zdaj en opis (`buildLabelLayout` →
+  `LabelLayout`), ki ga uporabljata tisk (ZPL) in predogled v aplikaciji.
+  Zgoraj velika oznaka (+ x/y desno na isti črti), spodaj levo QR (mag. 7),
+  desno besedilo; varni rob 20 pik; ID kosa je na vseh vrstah natisnjen
+  majhno (ročni vnos). Širina pisave 0 ≈ 0.57 × višina na znak
+  (`estimateTextWidth`, izmerjeno na fotografiji) — testi preverjajo, da se
+  velika oznaka in x/y ne prekrivata. Vrste: regija (MB/CE/DOL,
   ne glede na način) = velika oznaka + x/4 + ime/telefon + QR; LJ dostava =
   velik ID naročila (LJ-099) + 3/4 + QR, manjše ime; LJ Pripeljano = veliko ime
   + telefon + 3/4 + QR. Brez prevzemne točke in brez mer. QR vsebuje še vedno
   polni ID kosa. **Print all** + **Natisni izbrane** (izbira kosov na
-  predogledu) + ponatis iz podrobnosti kosa. **Še ni natisnjeno na pravem
-  ZD230** — preveri, da se regijska oznaka (font 100) in ime prilegata 40 mm.
+  predogledu) + ponatis iz podrobnosti kosa. **Nova ležeča postavitev še ni
+  natisnjena** — natisni po eno nalepko vsake vrste in preveri rob/sponke.
 - ✔ Seed: vrste "Navadna / sintetika", Shaggy, Volna, "Perzijska / ročno
   vozlana", doplačilo "Ponovno pranje" (+30 %). Šifrant v Firestoreju
   (lastnik v aplikaciji) se NE spremeni sam — preimenuj ročno v Več.

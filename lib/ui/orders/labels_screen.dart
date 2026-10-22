@@ -182,12 +182,13 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              // Nalepka je ležeča, 60×40mm. Pri enem ali dveh kosih je
+              // predogled velik, da se besedilo bere.
+              crossAxisCount: items.length <= 2 ? 1 : 2,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              // Nalepka je pokončna, 40×60mm.
-              childAspectRatio: 40 / 60,
+              childAspectRatio: labelWidthDots / labelHeightDots,
             ),
             itemCount: items.length,
             itemBuilder: (_, i) {
@@ -291,6 +292,9 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
   }
 }
 
+/// Predogled nalepke, narisan iz iste postavitve kot tisk (`buildLabelLayout`),
+/// v pikah tiskalnika (480×320) in pomanjšan. Zato se ne more razlikovati od
+/// tega, kar se dejansko natisne.
 class _LabelPreview extends StatelessWidget {
   const _LabelPreview({
     required this.order,
@@ -304,73 +308,68 @@ class _LabelPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Postavitev sledi pravi nalepki (`buildLabelZpl`): QR na vrhu, pod njim
-    // besedilo glede na vrsto nalepke.
-    final phone = Fmt.phone(order.customerPhone);
+    final layout = buildLabelLayout(
+      kind: kind,
+      itemId: item.id,
+      orderId: order.id,
+      pieceLabel: item.pieceLabel,
+      customerName: order.customerName,
+      phone: Fmt.phone(order.customerPhone),
+      regionCode: order.location.code,
+    );
 
-    Widget text(String value, double size,
-            {FontWeight weight = FontWeight.w600,
-            int maxLines = 1,
-            Color color = AppColors.text,
-            double spacing = 0}) =>
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-            value,
-            textAlign: TextAlign.center,
-            maxLines: maxLines,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: size,
-              fontWeight: weight,
-              color: color,
-              letterSpacing: spacing,
-              height: 1.05,
-            ),
-          ),
-        );
-
-    final lines = switch (kind) {
-      LabelKind.region => [
-          text(order.location.code, 34, weight: FontWeight.w900),
-          text(item.pieceLabel, 20, weight: FontWeight.w800),
-          text(order.customerName, 11),
-          if (phone.isNotEmpty) text(phone, 10),
-        ],
-      LabelKind.ljDelivery => [
-          text(order.id, 24, weight: FontWeight.w900),
-          text(item.pieceLabel, 20, weight: FontWeight.w800),
-          text(order.customerName, 10, maxLines: 2),
-          text(item.id, 8, color: AppColors.textMuted),
-        ],
-      LabelKind.dropoff => [
-          text(order.customerName, 14, weight: FontWeight.w800, maxLines: 2),
-          if (phone.isNotEmpty) text(phone, 13, weight: FontWeight.w700),
-          text(item.pieceLabel, 20, weight: FontWeight.w800),
-          text(item.id, 8, color: AppColors.textMuted),
-        ],
+    TextAlign align(String a) => switch (a) {
+      'R' => TextAlign.right,
+      'C' => TextAlign.center,
+      _ => TextAlign.left,
     };
 
     return Container(
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          AspectRatio(
-            aspectRatio: 1.4,
-            child: QrImageView(
-              data: item.id,
-              padding: EdgeInsets.zero,
-            ),
+      clipBehavior: Clip.antiAlias,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: labelWidthDots.toDouble(),
+          height: labelHeightDots.toDouble(),
+          child: Stack(
+            children: [
+              Positioned(
+                left: LabelLayout.qrX.toDouble(),
+                top: LabelLayout.qrY.toDouble(),
+                width: LabelLayout.qrSize.toDouble(),
+                height: LabelLayout.qrSize.toDouble(),
+                child: QrImageView(
+                  data: layout.qrData,
+                  padding: EdgeInsets.zero,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+              for (final f in layout.fields)
+                Positioned(
+                  left: f.x.toDouble(),
+                  top: f.y.toDouble(),
+                  width: f.w.toDouble(),
+                  child: Text(
+                    f.text,
+                    maxLines: f.maxLines,
+                    overflow: TextOverflow.clip,
+                    textAlign: align(f.align),
+                    style: TextStyle(
+                      fontSize: f.size * 0.9,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111111),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(height: 4),
-          ...lines,
-        ],
+        ),
       ),
     );
   }
