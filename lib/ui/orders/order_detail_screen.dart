@@ -71,8 +71,12 @@ class OrderDetailScreen extends ConsumerWidget {
                 if (order.customerPhone.isNotEmpty)
                   DetailRow('Telefon', order.customerPhone),
                 if (order.customerAddress.isNotEmpty)
-                  DetailRow('Naslov', order.customerAddress),
-                DetailRow('Način', order.channel.label),
+                  DetailRow(
+                    'Naslov',
+                    order.customerAddress,
+                    valueAlign: TextAlign.left,
+                    valueFlex: 2,
+                  ),
                 DetailRow('Predaja', order.handover.label),
                 if (order.pickupAt != null)
                   DetailRow(
@@ -84,8 +88,6 @@ class OrderDetailScreen extends ConsumerWidget {
                   DetailRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
                 if (order.dueAt != null)
                   DetailRow('Rok', Fmt.dateTime(order.dueAt)),
-                DetailRow('Sprejeto',
-                    '${Fmt.dateTime(order.createdAt)} · ${order.createdByName}'),
               ],
             ),
           ),

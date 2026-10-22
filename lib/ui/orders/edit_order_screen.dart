@@ -37,6 +37,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
   final _search = TextEditingController();
   late final TextEditingController _notes;
   bool _pickingCustomer = false;
+  bool _showAllCustomers = false;
 
   @override
   void initState() {
@@ -71,6 +72,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Uredi naročilo ${_original.number}')),
       body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
           const SectionHeader('Območje'),
@@ -185,14 +187,15 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     final query = _search.text.trim().toLowerCase();
     final all = ref.watch(repositoryProvider).customers;
     final wantCompany = _channel == OrderChannel.b2b;
-    final matches = all
+    final filtered = all
         .where((c) => c.isCompany == wantCompany)
         .where((c) =>
             query.isEmpty ||
             c.name.toLowerCase().contains(query) ||
             c.phone.replaceAll(' ', '').contains(query.replaceAll(' ', '')))
-        .take(6)
         .toList();
+    final showList = query.isNotEmpty || _showAllCustomers;
+    final matches = showList ? filtered : const <Customer>[];
 
     return Column(
       children: [
@@ -207,6 +210,16 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
           ),
         ),
         const SizedBox(height: 8),
+        if (!showList && filtered.isNotEmpty) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => setState(() => _showAllCustomers = true),
+              child: Text('Prikaži vse (${filtered.length})'),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
         for (final c in matches) ...[
           AppCard(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

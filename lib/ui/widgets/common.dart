@@ -369,11 +369,20 @@ class StatTile extends StatelessWidget {
 
 /// Vrstica ključ–vrednost v podrobnostih.
 class DetailRow extends StatelessWidget {
-  const DetailRow(this.label, this.value, {super.key, this.strong = false});
+  const DetailRow(
+    this.label,
+    this.value, {
+    super.key,
+    this.strong = false,
+    this.valueAlign = TextAlign.right,
+    this.valueFlex = 1,
+  });
 
   final String label;
   final String value;
   final bool strong;
+  final TextAlign valueAlign;
+  final int valueFlex;
 
   @override
   Widget build(BuildContext context) {
@@ -393,9 +402,10 @@ class DetailRow extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Flexible(
+            flex: valueFlex,
             child: Text(
               value,
-              textAlign: TextAlign.right,
+              textAlign: valueAlign,
               style: TextStyle(
                 fontSize: strong ? 16 : 14,
                 fontWeight: strong ? FontWeight.w700 : FontWeight.w500,

@@ -662,7 +662,40 @@ user-facing label from "Poslovalnica" to "Območje" everywhere it appears
   Celje shows up there with no extra UI code — only the section label
   text needed renaming.
 
-## 5. How to resume work in a fresh session
+### 4.9 — Naročila: 4 fazni zavihki namesto Aktivna/Zaključena — DONE (2026-09-21)
+Zavihka *Aktivna*/*Zaključena* iz §4.4 sta zamenjana s štirimi zavihki, ki so
+neposredno koraki proizvodnje: **Naročila** (še ni šlo v proces) →
+**Čaka pranje** → **Sušenje** → **Pripravljeno**. Odločitve, potrjene z
+lastnikom pred implementacijo:
+
+- **Mešani koraki znotraj enega naročila** (npr. 2 kosa čakata pranje, 3 so
+  že v sušenju) — naročilo se pokaže v **vseh** ustreznih zavihkih hkrati, ne
+  samo v enem. Prvi zavihek ("Naročila") je izjema in ostaja izključujoč:
+  naročilo je tam samo, dokler *noben* kos še ni zapustil `awaitingPickup`
+  (`OrderStatus.scheduledPickup`). Logika je v `OrderPhase.matches()` v
+  `orders_screen.dart`.
+- **`RugStatus.finishing`** ("Mere in cena") nima lastnega zavihka — kos v tem
+  stanju šteje pod "Sušenje", skladno z obstoječim komentarjem ob
+  `finishRugFromDrying()` v `repository.dart`, da ta status namenoma ni
+  ločena čakalna vrsta.
+- **Zaključena naročila so povsem umaknjena s te strani** — ko so vsi kosi
+  naročila `returned`, naročilo izgine iz vseh štirih zavihkov. Zgodovina je
+  dostopna samo še prek profila stranke (`CustomerDetailScreen`, razdelek
+  "Zgodovina"), ki to že prikazoval pred to spremembo — ni bilo treba graditi
+  novega zaslona.
+- Zato je bila **"Zaključena naročila" vrstica v meniju Več odstranjena**
+  (skakala je na zavihek, ki ne obstaja več) in `ordersTabProvider` v
+  `data/navigation.dart` ukinjen, ker ga zunaj `orders_screen.dart` ni
+  uporabljal nihče drug. `stats_screen.dart` (skupni promet zaključenih
+  naročil) je neodvisen od tega providerja in ni bil prizadet.
+- Filter za "korak" (`OrderFilter.step`) je odstranjen iz ikone filtra v
+  glavi — zavihki zdaj pokrivajo isto potrebo. Filter za kanal je ostal.
+- `OrderCard`: naročila v statusu `scheduledPickup` zdaj vedno dobijo enak
+  opozorilni videz (rdeč rob, ikona opozorila, vrstica "Čaka prevzem v
+  delavnici.") kot zamujena naročila, ne glede na to, ali je rok dejansko
+  že mimo — ker čakanje na prevzem v delavnico samo po sebi zahteva akcijo.
+  Dejansko zamujena naročila (`isOverdue`) imajo prednost in še vedno kažejo
+  "Zamuja X dni".
 
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter

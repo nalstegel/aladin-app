@@ -93,9 +93,12 @@ functions/       potisna obvestila (Cloud Functions) — glej functions/README.m
 Spodnja vrstica ima pet zavihkov: **Danes**, **Naročila**, veliki gumb za
 **skeniranje** na sredini, **Stranke** in **Več**.
 
-Naročila so v enem seznamu z zavihkoma *Aktivna* in *Zaključena*; kanal
-(dostava / pripeljano / B2B) je oznaka na kartici in filter v glavi, ne več
-ločen zavihek.
+Naročila imajo štiri zavihke, ki so dejanski koraki proizvodnje: *Naročila*
+(še ni šlo v proces), *Čaka pranje*, *Sušenje* in *Pripravljeno*. Naročilo se
+samodejno premakne naprej, ko delavec naredi ustrezno akcijo; kanal (dostava /
+pripeljano / B2B) je oznaka na kartici in filter v glavi, ne zavihek. Ko so
+vsi kosi vrnjeni, naročilo tu izgine — zgodovino najdeš v profilu stranke
+(Stranke → izbrana stranka → Zgodovina).
 
 ## Naročila in ID-ji
 
