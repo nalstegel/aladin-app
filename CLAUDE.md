@@ -76,8 +76,12 @@ lib/
     seed.dart          demo data
     providers.dart     Riverpod providers built on repositoryProvider
   ui/
-    dashboard/     "Danes" (Today) — 5 tappable tiles, inline Prevzemi/Vrni actions
-    orders/        Aktivna/Zaključena tabs + filter sheet (channel + step)
+    dashboard/     "Danes" (Today) — Hiter vnos + 4 collapsed accordion blocks
+                   (Prevzemi danes / Vračila danes / Delavnica / Potrebna akcija)
+    orders/        5 top-level tabs (Naročila/Čaka pranje/Sušenje/Pripravljeno/
+                   Dostave) with counters, search, channel filter — tab logic in
+                   data/order_phases.dart; pickup_sheet.dart (surcharges at
+                   physical pickup), ready_lists.dart (Pripravljeno + Dostave)
     rugs/          single rug: measure sheet, finish sheet (extras/discount/price)
     scanner/       scanner TAB (live camera) + work lists + ScanCaptureScreen
     customers/     CRM (auto-built from order history)
@@ -115,6 +119,26 @@ manage roles in Nastavitve → Zaposleni. `AppUser.id` is the Firebase UID.
 
 `main.dart` wires `_AuthGate` (signed in?) → `_DataGate` (data loaded + account
 bound to an `AppUser` via `Repository.bindAuthUser`) → `AppShell`.
+
+## V8 rules (plan.md §4.11) — don't undo these by accident
+
+- **Print ≠ pickup.** Label print/reprint never changes status. Items leave
+  `awaitingPickup` only via `Repository.confirmPickup` (the "Prevzeto pri
+  stranki" sheet); scanning an `awaitingPickup` item opens that sheet.
+- **Vnos/Iznos are order-level, entered at pickup** (`WorkOrder.orderExtras`);
+  they never appear in Hitri obračun. Urin/Dlake are marked per item at pickup
+  and arrive pre-selected in Hitri obračun.
+- **V kombi is a flag** (`WorkOrder.inVanAt`), not a status — the order stays
+  `awaitingDelivery`; `_recompute` clears it when the order leaves that state.
+  Same for `calledAt` (Klicano). Pripravljeno excludes in-van orders; Dostave
+  contains only them.
+- **Order total = `billingFor()`** (`data/billing.dart`): items + order extras
+  + delivery fee + minimum-50 € top-up (only channel `delivery`, only once all
+  items are priced). Use it, never sum `item.price` by hand.
+- **No red for "Zamuja".** Red is only for a late own pickup. Return deadline
+  is a grey reminder (`returnReminderDays = 10`).
+- Label kind comes from the order (`labelKindFor`): region (MB/CE/DOL) first,
+  then LJ delivery vs Pripeljano.
 
 ## UI conventions (added in the 2026-08-29 redesign, plan.md §4.4)
 

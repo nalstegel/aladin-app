@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../../models/rug_item.dart';
+import '../orders/labels_screen.dart';
 import '../orders/order_detail_screen.dart';
 import '../widgets/common.dart';
 import 'finish_sheet.dart';
@@ -36,7 +37,25 @@ class RugDetailScreen extends ConsumerWidget {
     final color = AppColors.forRug(item.status);
 
     return Scaffold(
-      appBar: AppBar(title: Text(item.id)),
+      appBar: AppBar(
+        title: Text(item.id),
+        actions: [
+          // Individualni ponatis etikete tega kosa — status se ne spremeni.
+          IconButton(
+            tooltip: 'Natisni etiketo',
+            icon: const Icon(Icons.qr_code_2),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LabelsScreen(
+                  orderId: item.orderId,
+                  onlyItemId: item.id,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [

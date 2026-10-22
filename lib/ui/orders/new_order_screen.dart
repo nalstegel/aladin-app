@@ -9,7 +9,9 @@ import '../../models/customer.dart';
 import '../../models/enums.dart';
 import '../widgets/common.dart';
 import '../widgets/pickup_window_picker.dart';
+import '../widgets/delivery_fee_stepper.dart';
 import 'labels_screen.dart';
+import 'pickup_sheet.dart';
 
 /// Sprejem naročila. Isti obrazec za vse tri kanale — razlikujejo se
 /// samo termini in način predaje.
@@ -35,6 +37,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
   late HandoverMode _handover = _defaultHandover(widget.initialChannel);
   Customer? _customer;
   int _itemCount = 1;
+  double _deliveryFee = 0;
   DateTime _pickupDate = DateTime.now().add(const Duration(days: 1));
   TimeOfDay? _pickupStart;
   TimeOfDay? _pickupEnd;
@@ -112,12 +115,17 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
-          const SectionHeader('Območje'),
+          const SectionHeader('Regija'),
           SegmentedButton<OrderLocation>(
             segments: [
               for (final l in OrderLocation.values)
-                ButtonSegment(value: l, label: Text(l.label)),
+                ButtonSegment(
+                  value: l,
+                  label: Text(l.code, maxLines: 1, softWrap: false),
+                ),
             ],
+            // Brez kljukice — sicer oznaka nima prostora in se prelomi.
+            showSelectedIcon: false,
             selected: {_location},
             onSelectionChanged: (s) => setState(() => _location = s.first),
           ),
@@ -143,6 +151,13 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
           _counter(),
           const SectionHeader('Termini'),
           _dates(),
+          if (_channel != OrderChannel.dropoff) ...[
+            const SizedBox(height: 8),
+            DeliveryFeeStepper(
+              value: _deliveryFee,
+              onChanged: (v) => setState(() => _deliveryFee = v),
+            ),
+          ],
           const SectionHeader('Opomba'),
           TextField(
             controller: _notes,
@@ -615,7 +630,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
       : DateTime(_pickupDate.year, _pickupDate.month, _pickupDate.day,
           _pickupEnd!.hour, _pickupEnd!.minute);
 
-  void _submit() {
+  Future<void> _submit() async {
     final repo = ref.read(repositoryProvider.notifier);
     final order = repo.createOrder(
       customer: _customer!,
@@ -629,8 +644,14 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
       deliveryAt:
           _handover == HandoverMode.weDeliver ? _deliveryAt : null,
       dueAt: _dueAt,
+      deliveryFee: _channel == OrderChannel.dropoff ? 0 : _deliveryFee,
       notes: _notes.text,
     );
+    // Pripeljano: najprej hiter korak prevzema, nato etikete (V8 §2).
+    if (order.channel == OrderChannel.dropoff) {
+      await PickupSheet.show(context, order.id);
+      if (!mounted) return;
+    }
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(

@@ -4,16 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
+import '../../core/launch.dart';
 import '../../core/theme.dart';
+import '../../data/billing.dart';
 import '../../data/providers.dart';
 import '../../data/repository.dart';
 import '../../models/enums.dart';
+import '../../models/order.dart';
 import '../../models/return_proof.dart';
 import '../../models/rug_item.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
 import 'edit_order_screen.dart';
 import 'labels_screen.dart';
+import 'pickup_sheet.dart';
 import 'return_flow_screen.dart';
 
 class OrderDetailScreen extends ConsumerWidget {
@@ -67,27 +71,47 @@ class OrderDetailScreen extends ConsumerWidget {
           AppCard(
             child: Column(
               children: [
-                DetailRow('Stranka', order.customerName),
+                _InfoRow('Stranka', order.customerName),
                 if (order.customerPhone.isNotEmpty)
-                  DetailRow('Telefon', order.customerPhone),
+                  _InfoRow(
+                    'Telefon',
+                    Fmt.phone(order.customerPhone),
+                    icon: Icons.call,
+                    onTap: () => _launch(
+                      context,
+                      callPhone(order.customerPhone),
+                      'Klica ni bilo mogoče začeti.',
+                    ),
+                  ),
                 if (order.customerAddress.isNotEmpty)
-                  DetailRow(
+                  _InfoRow(
                     'Naslov',
                     order.customerAddress,
-                    valueAlign: TextAlign.left,
-                    valueFlex: 2,
+                    icon: Icons.directions,
+                    onTap: () => _launch(
+                      context,
+                      openMaps(order.customerAddress),
+                      'Zemljevida ni bilo mogoče odpreti.',
+                    ),
                   ),
-                DetailRow('Predaja', order.handover.label),
+                _InfoRow('Predaja', order.handover.label),
                 if (order.pickupAt != null)
-                  DetailRow(
+                  _InfoRow(
                     'Prevzem',
                     '${Fmt.date(order.pickupAt)} '
                         '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)}',
                   ),
                 if (order.deliveryAt != null)
-                  DetailRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
+                  _InfoRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
                 if (order.dueAt != null)
-                  DetailRow('Rok', Fmt.dateTime(order.dueAt)),
+                  _InfoRow('Rok', Fmt.dateTime(order.dueAt)),
+                if (order.calledAt != null)
+                  _InfoRow(
+                    'Klicano',
+                    '${Fmt.dateShort(order.calledAt)} ob ${Fmt.time(order.calledAt)}',
+                  ),
+                if (order.inVanAt != null)
+                  _InfoRow('V kombiju', Fmt.dateTime(order.inVanAt)),
               ],
             ),
           ),
@@ -137,7 +161,12 @@ class OrderDetailScreen extends ConsumerWidget {
             const SizedBox(height: 8),
           ],
           const SectionHeader('Obračun'),
-          _totals(state.orderM2(orderId), state.orderTotal(orderId), items),
+          _totals(
+            state.orderM2(orderId),
+            order,
+            billingFor(order, items),
+            items,
+          ),
           if (order.returnProof != null) ...[
             const SectionHeader('Dokazilo o vračilu'),
             _proof(order.returnProof!),
@@ -146,6 +175,19 @@ class OrderDetailScreen extends ConsumerWidget {
       ),
       bottomNavigationBar: _actions(context, ref, ready, items.length),
     );
+  }
+
+  static Future<void> _launch(
+    BuildContext context,
+    Future<bool> launch,
+    String error,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var ok = false;
+    try {
+      ok = await launch;
+    } catch (_) {}
+    if (!ok) messenger.showSnackBar(SnackBar(content: Text(error)));
   }
 
   Widget _header(
@@ -204,7 +246,12 @@ class OrderDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _totals(double m2, double total, List<RugItem> items) {
+  Widget _totals(
+    double m2,
+    WorkOrder order,
+    OrderBilling billing,
+    List<RugItem> items,
+  ) {
     final measured = items.where((i) => i.isMeasured).length;
     return AppCard(
       child: Column(
@@ -212,7 +259,20 @@ class OrderDetailScreen extends ConsumerWidget {
           DetailRow('Izmerjeni kosi', '$measured / ${items.length}'),
           DetailRow('Skupaj površina', Fmt.m2(m2)),
           const Divider(height: 18),
-          DetailRow('Skupaj za plačilo', Fmt.money(total), strong: true),
+          DetailRow('Kosi', Fmt.money(billing.itemsTotal)),
+          // Doplačila prevzema (Vnos/Iznos) in dostava so informacija
+          // prevzema, ki se samo prenese v končni obračun (V8 §2).
+          for (final e in order.orderExtras)
+            DetailRow(e.name, Fmt.money(e.amount(base: 0, m2: 0))),
+          if (billing.deliveryFee > 0)
+            DetailRow('Dostavno doplačilo', Fmt.money(billing.deliveryFee)),
+          if (billing.minimumTopUp > 0)
+            DetailRow(
+              'Minimum ${minimumDeliveryOrderTotal.toStringAsFixed(0)} €',
+              Fmt.money(billing.minimumTopUp),
+            ),
+          const Divider(height: 18),
+          DetailRow('Skupaj za plačilo', Fmt.money(billing.total), strong: true),
           if (measured < items.length)
             const Padding(
               padding: EdgeInsets.only(top: 6),
@@ -307,21 +367,27 @@ class OrderDetailScreen extends ConsumerWidget {
 
     if (order.status == OrderStatus.scheduledPickup) {
       return wrap(FilledButton.icon(
-        onPressed: () {
-          repo.markOrderPickedUp(orderId);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Preproge prevzete — čakajo na pranje'),
-            ),
-          );
+        // Odpre hiter korak prevzema z doplačili (V8 §2); šele Potrdi premakne
+        // kose v Čaka pranje.
+        onPressed: () async {
+          final confirmed = await PickupSheet.show(context, orderId);
+          if (confirmed && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Preproge prevzete — čakajo na pranje'),
+              ),
+            );
+          }
         },
         icon: const Icon(Icons.local_shipping),
-        label: const Text('Prevzeto pri stranki'),
+        label: Text(order.channel == OrderChannel.dropoff
+            ? 'Prevzeto v delavnico'
+            : 'Prevzeto pri stranki'),
       ));
     }
 
     if (order.status.isHandoverReady) {
-      return wrap(FilledButton.icon(
+      final returnButton = FilledButton.icon(
         style: FilledButton.styleFrom(backgroundColor: AppColors.ready),
         onPressed: () => Navigator.push(
           context,
@@ -335,7 +401,51 @@ class OrderDetailScreen extends ConsumerWidget {
               ? 'Predaja stranki'
               : 'Vračilo na naslov',
         ),
-      ));
+      );
+      // Dostava: glavna akcija je V kombi (V8 §4); ko je naročilo v kombiju,
+      // je glavna akcija vračilo, V Pripravljeno pa ga vrne Iz kombija.
+      if (order.status == OrderStatus.awaitingDelivery) {
+        return wrap(Row(
+          children: [
+            Expanded(
+              child: order.inVanAt == null
+                  ? OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ReturnFlowScreen(orderId: orderId),
+                        ),
+                      ),
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('Vračilo'),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: () => repo.removeFromVan(orderId),
+                      icon: const Icon(Icons.undo),
+                      label: const Text('Iz kombija'),
+                    ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: order.inVanAt == null
+                  ? FilledButton.icon(
+                      onPressed: () {
+                        repo.sendToVan(orderId);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${order.number} je v kombiju.'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.local_shipping),
+                      label: const Text('V kombi'),
+                    )
+                  : returnButton,
+            ),
+          ],
+        ));
+      }
+      return wrap(returnButton);
     }
 
     return wrap(Row(
@@ -487,6 +597,57 @@ class _ItemRow extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Vrstica bloka Podatki: labele v stolpcu enake širine, vrednosti poravnane
+/// levo pod sabo, da se blok hitro prebere (QA v4 §8). Telefon in naslov sta
+/// klikljiva (klic / Maps) in to kažeta z ikono na desni.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.label, this.value, {this.icon, this.onTap});
+
+  final String label;
+  final String value;
+  final IconData? icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: onTap == null ? AppColors.text : AppColors.primary,
+              ),
+            ),
+          ),
+          if (icon != null) ...[
+            const SizedBox(width: 8),
+            Icon(icon, size: 18, color: AppColors.primary),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: row,
     );
   }
 }

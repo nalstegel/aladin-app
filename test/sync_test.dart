@@ -50,6 +50,7 @@ AppState _asRemote(AppState s, {List<Customer>? customers}) => AppState(
       nextOrderSeqLjubljana: s.nextOrderSeqLjubljana,
       nextOrderSeqMaribor: s.nextOrderSeqMaribor,
       nextOrderSeqCelje: s.nextOrderSeqCelje,
+      nextOrderSeqDolenjska: s.nextOrderSeqDolenjska,
     );
 
 void main() {

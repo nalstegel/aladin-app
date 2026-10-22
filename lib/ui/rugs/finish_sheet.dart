@@ -67,7 +67,9 @@ class _FinishSheetState extends ConsumerState<FinishSheet> {
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final templates =
-        state.extraTemplates.where((t) => t.active).toList();
+        state.extraTemplates
+            .where((t) => t.active && !t.isOrderLevel)
+            .toList();
     final chosen = templates
         .where((t) => _selected.contains(t.id))
         .map(AppliedExtra.fromTemplate)

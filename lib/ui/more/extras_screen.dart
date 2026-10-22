@@ -54,19 +54,23 @@ class ExtrasScreen extends ConsumerWidget {
                       ),
                       Text(
                         '${e.value > 0 ? '+' : '−'}'
-                        '${e.value.abs().toStringAsFixed(e.kind == ExtraKind.percent ? 0 : 2).replaceAll('.', ',')} '
+                        '${(e.hasChoices ? e.choices : [e.value]).map((v) => formatExtraValue(v.abs(), e.kind)).join(' / ')} '
                         '${e.kind.label}',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color:
-                              e.isDiscount ? AppColors.ready : AppColors.primary,
+                          color: e.isDiscount
+                              ? AppColors.ready
+                              : AppColors.primary,
                         ),
                       ),
                       IconButton(
                         tooltip: 'Izbriši',
-                        icon: const Icon(Icons.delete_outline,
-                            color: AppColors.danger, size: 20),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: AppColors.danger,
+                          size: 20,
+                        ),
                         onPressed: () => _confirmDeleteExtra(context, ref, e),
                       ),
                     ],
@@ -115,6 +119,13 @@ Future<void> editExtra(
   final value = TextEditingController(
     text: existing?.value.toStringAsFixed(2) ?? '',
   );
+  final choices = TextEditingController(
+    text:
+        existing?.choices
+            .map((v) => formatExtraValue(v, existing.kind))
+            .join(', ') ??
+        '',
+  );
   var kind = existing?.kind ?? ExtraKind.percent;
 
   final ok = await showDialog<bool>(
@@ -154,6 +165,18 @@ Future<void> editExtra(
               selected: {kind},
               onSelectionChanged: (s) => setState(() => kind = s.first),
             ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: choices,
+              keyboardType: TextInputType.text,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,; ]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Izbira ob obračunu (neobvezno)',
+                helperText: 'Npr. "5; 10" — delavec izbere eno vrednost.',
+              ),
+            ),
           ],
         ),
         actions: [
@@ -172,13 +195,21 @@ Future<void> editExtra(
 
   if (ok == true) {
     final repo = ref.read(repositoryProvider.notifier);
-    final v = double.tryParse(value.text.replaceAll(',', '.'));
+    final options = parseExtraChoices(choices.text);
+    final v =
+        double.tryParse(value.text.replaceAll(',', '.')) ??
+        (options.isEmpty ? null : options.first);
     if (name.text.trim().isNotEmpty && v != null && v != 0) {
       if (existing == null) {
-        repo.createExtraTemplate(name.text.trim(), kind, v);
+        repo.createExtraTemplate(name.text.trim(), kind, v, choices: options);
       } else {
         repo.upsertExtraTemplate(
-          existing.copyWith(name: name.text.trim(), kind: kind, value: v),
+          existing.copyWith(
+            name: name.text.trim(),
+            kind: kind,
+            value: v,
+            choices: options,
+          ),
         );
       }
     }
@@ -186,4 +217,20 @@ Future<void> editExtra(
 
   name.dispose();
   value.dispose();
+  choices.dispose();
 }
+
+/// "5; 10" ali "5, 10" → [5, 10]. Decimalna vejica je dovoljena ("7,5; 10"),
+/// zato je ločilo podpičje; vejica loči vrednosti le, če ji sledi presledek.
+List<double> parseExtraChoices(String text) => text
+    .split(RegExp(r';|,\s+'))
+    .map((p) => double.tryParse(p.trim().replaceAll(',', '.')))
+    .whereType<double>()
+    .where((v) => v != 0)
+    .toList();
+
+String formatExtraValue(double v, ExtraKind kind) => v
+    .toStringAsFixed(
+      kind == ExtraKind.percent || v == v.roundToDouble() ? 0 : 2,
+    )
+    .replaceAll('.', ',');

@@ -5,7 +5,9 @@ import '../models/enums.dart';
 import '../models/order.dart';
 import 'providers.dart';
 
-enum AlertKind { readyForHandover, overdue }
+/// Samo pripravljena naročila — "zamuja" ni več alarm (V8 §4): rok vračila
+/// je nevsiljiv interni opomnik, ne obvestilo.
+enum AlertKind { readyForHandover }
 
 /// Obvestilo, izpeljano iz stanja naročil.
 ///
@@ -43,16 +45,6 @@ List<Alert> buildAlerts(List<WorkOrder> orders, DateTime now) {
             ? '${o.customerName} — čaka na prevzem v obratu.'
             : '${o.customerName} — čaka na vračilo.',
         at: o.readyAt ?? o.createdAt,
-        orderId: o.id,
-      ));
-    }
-    if (o.isOverdue(now)) {
-      list.add(Alert(
-        id: 'overdue:${o.id}',
-        kind: AlertKind.overdue,
-        title: '${o.number} zamuja',
-        body: '${o.customerName} — rok je potekel.',
-        at: o.dueAt ?? o.createdAt,
         orderId: o.id,
       ));
     }

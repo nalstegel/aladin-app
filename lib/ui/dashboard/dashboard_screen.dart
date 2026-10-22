@@ -3,18 +3,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../data/navigation.dart';
+import '../../data/order_phases.dart';
 import '../../data/providers.dart';
-import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../notifications/notifications_screen.dart';
-import '../orders/order_card.dart';
+import '../orders/ready_lists.dart';
 import '../orders/return_flow_screen.dart';
-import '../scanner/work_list_screen.dart';
 import '../widgets/common.dart';
 import 'quick_order_card.dart';
 
-/// Nadzorna plošča za današnji dan — nadomešča list, kamor se je do zdaj
-/// pisalo, kdo je za prevzem in kdo za vračilo.
+/// Najdaljši seznam v enem bloku na Home — več ni "kratek Home". Preostalo
+/// odpre ustrezen zavihek.
+const _maxRowsPerBlock = 5;
+
+/// Nadzorna plošča za današnji dan (V8 §1): Hiter vnos naročila je edino
+/// glavno mesto za ustvarjanje naročil, pod njim pa so kratki zaprti bloki,
+/// ki kažejo samo števec in se razprejo na klik. Brez dolgih seznamov.
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
@@ -23,30 +28,23 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  final _pickupsKey = GlobalKey();
-  final _deliveriesKey = GlobalKey();
-  final _overdueKey = GlobalKey();
-  final _collectionsKey = GlobalKey();
+  /// Razprti bloki — privzeto so vsi zaprti.
+  final _open = <String>{};
 
-  Future<void> _scrollTo(GlobalKey key) async {
-    final ctx = key.currentContext;
-    if (ctx == null) return;
-    await Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      alignment: 0.05,
-    );
-  }
+  void _toggle(String id) =>
+      setState(() => _open.contains(id) ? _open.remove(id) : _open.add(id));
 
   @override
   Widget build(BuildContext context) {
     final pickups = ref.watch(todayPickupsProvider);
     final deliveries = ref.watch(todayDeliveriesProvider);
-    final collections = ref.watch(awaitingCollectionProvider);
-    final counts = ref.watch(productionCountsProvider);
-    final overdue = ref.watch(overdueOrdersProvider);
+    final state = ref.watch(repositoryProvider);
+    final counts = phaseCounts(state);
+    final action = ref.watch(actionNeededProvider);
     final unread = ref.watch(unreadAlertCountProvider);
+
+    final workshopTotal =
+        (counts[OrderPhase.washing] ?? 0) + (counts[OrderPhase.drying] ?? 0);
 
     return Scaffold(
       body: SafeArea(
@@ -65,55 +63,152 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _tiles(pickups, deliveries, collections, counts, overdue),
-            ),
-            _section(
-              key: _pickupsKey,
-              title: 'Danes za prevzem',
-              subtitle: 'Gremo po preproge k stranki.',
-              orders: pickups,
-              icon: Icons.local_shipping_outlined,
-              empty: 'Danes ni prevzemov.',
-              actionFor: (o) => OrderCardAction(
-                label: 'Prevzemi',
-                onPressed: () => _pickUp(o),
-              ),
-            ),
-            _section(
-              key: _deliveriesKey,
-              title: 'Danes za vračilo',
-              subtitle: 'Preproge peljemo nazaj.',
-              orders: deliveries,
-              icon: Icons.home_outlined,
-              empty: 'Danes ni vračil.',
-              actionFor: (o) => OrderCardAction(
-                label: 'Vrni',
-                onPressed: () => _startReturn(o),
-              ),
-            ),
-            _section(
-              key: _overdueKey,
-              title: 'Zamude',
-              subtitle: 'Rok je potekel, naročilo pa še ni zaključeno.',
-              orders: overdue,
-              icon: Icons.check_circle_outline,
-              empty: 'Ni zamud.',
-            ),
-            _section(
-              key: _collectionsKey,
-              title: 'Čaka na prevzem v obratu',
-              subtitle: 'Stranka pride sama.',
-              orders: collections,
-              icon: Icons.storefront_outlined,
-              empty: 'Nič ne čaka na prevzem.',
-              actionFor: (o) => OrderCardAction(
-                label: 'Vrni',
-                onPressed: () => _startReturn(o),
+              child: Column(
+                children: [
+                  _Accordion(
+                    title: 'Prevzemi danes',
+                    icon: Icons.local_shipping_outlined,
+                    color: AppColors.awaitingWash,
+                    count: pickups.length,
+                    open: _open.contains('pickups'),
+                    onToggle: () => _toggle('pickups'),
+                    child: _orderRows(
+                      orders: pickups,
+                      empty: 'Danes ni prevzemov.',
+                      overflowPhase: OrderPhase.intake,
+                      subtitle: (o) => [
+                        Fmt.timeRange(o.pickupAt, o.pickupWindowEnd),
+                        if (o.customerAddress.isNotEmpty) o.customerAddress,
+                      ].join(' · '),
+                      actionLabel: 'Prevzemi',
+                      onAction: (o) => startPickup(context, o),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _Accordion(
+                    title: 'Vračila danes',
+                    icon: Icons.home_outlined,
+                    color: AppColors.ready,
+                    count: deliveries.length,
+                    open: _open.contains('returns'),
+                    onToggle: () => _toggle('returns'),
+                    child: _orderRows(
+                      orders: deliveries,
+                      empty: 'Danes ni vračil.',
+                      overflowPhase: OrderPhase.deliveries,
+                      subtitle: (o) => [
+                        if (o.deliveryAt != null) Fmt.time(o.deliveryAt),
+                        if (o.customerAddress.isNotEmpty) o.customerAddress,
+                      ].join(' · '),
+                      actionLabel: 'Vrni',
+                      // Vračilo NIKOLI ni en dotik: skeniranje vseh kosov in
+                      // podpis stranke sta bistvo — gumb samo odpre postopek.
+                      onAction: (o) => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ReturnFlowScreen(orderId: o.id),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _Accordion(
+                    title: 'Delavnica',
+                    icon: Icons.local_laundry_service_outlined,
+                    color: AppColors.drying,
+                    count: workshopTotal,
+                    open: _open.contains('workshop'),
+                    onToggle: () => _toggle('workshop'),
+                    child: Column(
+                      children: [
+                        for (final p in [
+                          OrderPhase.washing,
+                          OrderPhase.drying,
+                          OrderPhase.ready,
+                          OrderPhase.deliveries,
+                        ])
+                          _LinkRow(
+                            label: p.label,
+                            value: counts[p] ?? 0,
+                            onTap: () => openOrdersPhase(ref, p),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _Accordion(
+                    title: 'Potrebna akcija',
+                    icon: Icons.flag_outlined,
+                    color: action.pickupLate.isEmpty
+                        ? AppColors.awaitingWash
+                        : AppColors.danger,
+                    count: action.total,
+                    open: _open.contains('action'),
+                    onToggle: () => _toggle('action'),
+                    child: action.total == 0
+                        ? const _EmptyLine('Vse je v redu.')
+                        : Column(
+                            children: [
+                              if (action.pickupLate.isNotEmpty)
+                                _LinkRow(
+                                  label: 'Prevzem zamuja',
+                                  value: action.pickupLate.length,
+                                  valueColor: AppColors.danger,
+                                  onTap: () =>
+                                      openOrdersPhase(ref, OrderPhase.intake),
+                                ),
+                              if (action.notCalled.isNotEmpty)
+                                _LinkRow(
+                                  label: 'Ni klicano (osebni prevzem)',
+                                  value: action.notCalled.length,
+                                  onTap: () =>
+                                      openOrdersPhase(ref, OrderPhase.ready),
+                                ),
+                              if (action.stuckItems.isNotEmpty)
+                                _LinkRow(
+                                  label: 'Kosi v "Mere in cena"',
+                                  value: action.stuckItems.length,
+                                  onTap: () =>
+                                      openOrdersPhase(ref, OrderPhase.drying),
+                                ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _orderRows({
+    required List<WorkOrder> orders,
+    required String empty,
+    required OrderPhase overflowPhase,
+    required String Function(WorkOrder) subtitle,
+    required String actionLabel,
+    required void Function(WorkOrder) onAction,
+  }) {
+    if (orders.isEmpty) return _EmptyLine(empty);
+    final shown = orders.take(_maxRowsPerBlock).toList();
+    final more = orders.length - shown.length;
+    return Column(
+      children: [
+        for (final o in shown)
+          _OrderRow(
+            order: o,
+            subtitle: subtitle(o),
+            actionLabel: actionLabel,
+            onAction: () => onAction(o),
+          ),
+        if (more > 0)
+          TextButton(
+            onPressed: () => openOrdersPhase(ref, overflowPhase),
+            child: Text('Še $more · odpri seznam'),
+          ),
+      ],
     );
   }
 
@@ -155,19 +250,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ],
     );
   }
+}
 
-  /// Štiri ploščice v dveh vrstah. "Mere in cena" ni več samostojna ploščica
-  /// (v3 spec §5) — hitri obračun se zdaj odpre kar iz seznama v Sušenju, ni
-  /// več ločene čakalne vrste, ki bi jo bilo treba prikazati posebej.
-  Widget _tiles(
-    List<WorkOrder> pickups,
-    List<WorkOrder> deliveries,
-    List<WorkOrder> collections,
-    Map<RugStatus, int> counts,
-    List<WorkOrder> overdue,
-  ) {
+/// Zaprt blok s števcem; razpre se na klik.
+class _Accordion extends StatelessWidget {
+  const _Accordion({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.count,
+    required this.open,
+    required this.onToggle,
+    required this.child,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color color;
+  final int count;
+  final bool open;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -175,162 +282,177 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              _tile('${pickups.length}', 'Prevzem',
-                  Icons.local_shipping_outlined, AppColors.awaitingWash,
-                  () => _scrollTo(_pickupsKey)),
-              _tile('${deliveries.length}', 'Vračilo', Icons.home_outlined,
-                  AppColors.ready, () => _scrollTo(_deliveriesKey)),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Divider(height: 1),
-          ),
-          Row(
-            children: [
-              _tile('${counts[RugStatus.drying] ?? 0}', 'Sušenje', Icons.air,
-                  AppColors.drying, () => _openList(RugStatus.drying)),
-              _tile('${overdue.length}', 'Zamude',
-                  Icons.warning_amber_rounded, AppColors.danger,
-                  () => _scrollTo(_overdueKey)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tile(
-    String value,
-    String label,
-    IconData icon,
-    Color color,
-    VoidCallback onTap,
-  ) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-          child: Column(
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(height: 6),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                  color: AppColors.text,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textMuted,
-                  height: 1.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _section({
-    required GlobalKey key,
-    required String title,
-    required String subtitle,
-    required List<WorkOrder> orders,
-    required IconData icon,
-    required String empty,
-    OrderCardAction Function(WorkOrder)? actionFor,
-  }) {
-    return Padding(
-      key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionHeader(
-            title,
-            subtitle: subtitle,
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '${orders.length}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-          ),
-          if (orders.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Column(
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              child: Row(
                 children: [
-                  Icon(icon, size: 24, color: AppColors.border),
-                  const SizedBox(height: 6),
-                  Text(
-                    empty,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textMuted,
+                  Icon(icon, size: 20, color: color),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: count == 0
+                          ? AppColors.border.withValues(alpha: 0.6)
+                          : color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: count == 0 ? AppColors.textMuted : color,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    open ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.textMuted,
                   ),
                 ],
               ),
-            )
-          else
-            for (final o in orders) ...[
-              OrderCard(o, action: actionFor?.call(o)),
-              const SizedBox(height: 8),
-            ],
+            ),
+          ),
+          if (open) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 8),
+              child: child,
+            ),
+          ],
         ],
       ),
     );
   }
+}
 
-  void _openList(RugStatus status) => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => WorkListScreen(status: status)),
-      );
+class _EmptyLine extends StatelessWidget {
+  const _EmptyLine(this.text);
 
-  /// Prevzem je en dotik — kosi gredo iz "V prevzemu" na "Na pranju".
-  void _pickUp(WorkOrder order) {
-    ref.read(repositoryProvider.notifier).markOrderPickedUp(order.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${order.number} prevzeto pri stranki.')),
-    );
-  }
+  final String text;
 
-  /// Vračilo NIKOLI ni en dotik: postopek zahteva skeniranje vseh kosov in
-  /// podpis stranke. Gumb zato samo odpre ta postopek.
-  void _startReturn(WorkOrder order) => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ReturnFlowScreen(orderId: order.id)),
-      );
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+      ),
+    ),
+  );
+}
+
+/// Vrstica z imenom in številko, ki odpre ustrezen zavihek.
+class _LinkRow extends StatelessWidget {
+  const _LinkRow({
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.valueColor,
+  });
+
+  final String label;
+  final int value;
+  final VoidCallback onTap;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    borderRadius: BorderRadius.circular(10),
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+          Text(
+            '$value',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: valueColor ?? AppColors.text,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Kompaktna vrstica naročila z eno akcijo (Prevzemi / Vrni).
+class _OrderRow extends StatelessWidget {
+  const _OrderRow({
+    required this.order,
+    required this.subtitle,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final WorkOrder order;
+  final String subtitle;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${order.number}  ${order.customerName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+              if (subtitle.isNotEmpty)
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton(
+          onPressed: onAction,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+          child: Text(actionLabel),
+        ),
+      ],
+    ),
+  );
 }

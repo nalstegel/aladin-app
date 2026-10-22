@@ -64,6 +64,9 @@ class RugItem {
 
   String get label => 'KOS $index/$ofTotal';
 
+  /// Kratka oznaka na nalepki: "3/4".
+  String get pieceLabel => '$index/$ofTotal';
+
   /// Enako kot [orderId] — ohranjeno kot getter, ker ga UI že uporablja za
   /// prikaz. Prej je parsiral [id] (`id.split('-').first`), kar se je
   /// pokvarilo, ko so ID-ji naročil sami dobili vezaj (npr. "LJ-001").
@@ -71,6 +74,15 @@ class RugItem {
 
   /// Kdaj se je kos nazadnje premaknil — za delovne sezname ob stroju.
   DateTime? get lastChangeAt => history.isEmpty ? null : history.last.at;
+
+  /// Kdaj je kos prišel v proces (prvi prehod v "Na pranju") — za vrstni red
+  /// v Čaka pranje / Sušenje. Za stare zapise brez tega dogodka prvi dogodek.
+  DateTime? get arrivedAt {
+    for (final e in history) {
+      if (e.status == RugStatus.awaitingWash) return e.at;
+    }
+    return history.isEmpty ? null : history.first.at;
+  }
 
   bool get isMeasured => m2 > 0 && rugTypeId != null;
 

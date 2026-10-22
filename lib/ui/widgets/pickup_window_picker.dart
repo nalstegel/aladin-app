@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
@@ -17,18 +18,11 @@ class PickupWindow {
       DateTime(date.year, date.month, date.day, end.hour, end.minute);
 }
 
-const _presetWindows = [
-  (TimeOfDay(hour: 8, minute: 0), TimeOfDay(hour: 10, minute: 0)),
-  (TimeOfDay(hour: 10, minute: 0), TimeOfDay(hour: 12, minute: 0)),
-  (TimeOfDay(hour: 12, minute: 0), TimeOfDay(hour: 14, minute: 0)),
-  (TimeOfDay(hour: 14, minute: 0), TimeOfDay(hour: 16, minute: 0)),
-  (TimeOfDay(hour: 16, minute: 0), TimeOfDay(hour: 18, minute: 0)),
-];
-
-/// Hitro časovno okno namesto klasičnega time pickerja (v3 spec §1):
-/// 8-10, 10-12, 12-14, 14-16, 16-18, Drugo (z ločenima poljema Od/Do).
-/// Datum je ločen od okna, izbran zgoraj.
-class PickupWindowPicker extends StatefulWidget {
+/// Termin prevzema (QA v4 §8): datum v svoji vrstici, časovno okno pa v eni
+/// kompaktni vrstici "Od [09:00]  Do [11:00]". Tap na uro odpre kolo z urami.
+/// Enaka začetna in končna ura (npr. 08:00–08:00) je dovoljena in pomeni
+/// točno dogovorjeno uro.
+class PickupWindowPicker extends StatelessWidget {
   const PickupWindowPicker({
     super.key,
     required this.date,
@@ -44,21 +38,8 @@ class PickupWindowPicker extends StatefulWidget {
   final TimeOfDay? end;
   final void Function(TimeOfDay start, TimeOfDay end) onWindowChanged;
 
-  @override
-  State<PickupWindowPicker> createState() => _PickupWindowPickerState();
-}
-
-class _PickupWindowPickerState extends State<PickupWindowPicker> {
-  bool _custom = false;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.start != null &&
-        !_presetWindows.any((w) => w.$1 == widget.start && w.$2 == widget.end)) {
-      _custom = true;
-    }
-  }
+  static const _defaultStart = TimeOfDay(hour: 8, minute: 0);
+  static const _defaultWindow = 2; // ur — ko izbereš "Od", "Do" sledi +2 h
 
   @override
   Widget build(BuildContext context) {
@@ -67,18 +48,21 @@ class _PickupWindowPickerState extends State<PickupWindowPicker> {
       children: [
         InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: _pickDate,
+          onTap: () => _pickDate(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Row(
               children: [
-                const Icon(Icons.event_outlined,
-                    size: 18, color: AppColors.textMuted),
+                const Icon(
+                  Icons.event_outlined,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
                 const SizedBox(width: 8),
                 const Text('Datum prevzema', style: TextStyle(fontSize: 14)),
                 const Spacer(),
                 Text(
-                  Fmt.dateShort(widget.date),
+                  Fmt.dateShort(date),
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -89,74 +73,148 @@ class _PickupWindowPickerState extends State<PickupWindowPicker> {
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        const SizedBox(height: 6),
+        Row(
           children: [
-            for (final w in _presetWindows)
-              ChoiceChip(
-                label: Text('${_fmt(w.$1)}-${_fmt(w.$2)}'),
-                selected: !_custom &&
-                    widget.start == w.$1 &&
-                    widget.end == w.$2,
-                onSelected: (_) {
-                  setState(() => _custom = false);
-                  widget.onWindowChanged(w.$1, w.$2);
-                },
-              ),
-            ChoiceChip(
-              label: const Text('Drugo'),
-              selected: _custom,
-              onSelected: (_) => setState(() => _custom = true),
-            ),
+            const Icon(Icons.schedule, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 8),
+            const Text('Od', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 8),
+            Expanded(child: _timeButton(context, start, isStart: true)),
+            const SizedBox(width: 14),
+            const Text('Do', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 8),
+            Expanded(child: _timeButton(context, end, isStart: false)),
           ],
         ),
-        if (_custom) ...[
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: _timeField('Od', widget.start, true)),
-              const SizedBox(width: 10),
-              Expanded(child: _timeField('Do', widget.end, false)),
-            ],
-          ),
-        ],
       ],
     );
   }
 
-  String _fmt(TimeOfDay t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}'
-      .replaceAll(':00', '');
-
-  Widget _timeField(String label, TimeOfDay? value, bool isStart) {
+  Widget _timeButton(
+    BuildContext context,
+    TimeOfDay? value, {
+    required bool isStart,
+  }) {
     return OutlinedButton(
-      onPressed: () async {
-        final picked = await showTimePicker(
-          context: context,
-          initialTime: value ?? const TimeOfDay(hour: 8, minute: 0),
-        );
-        if (picked == null) return;
-        if (isStart) {
-          widget.onWindowChanged(picked, widget.end ?? picked);
-        } else {
-          widget.onWindowChanged(widget.start ?? picked, picked);
-        }
-      },
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+      onPressed: () => _pickTime(context, isStart: isStart),
       child: Text(
-        value == null ? label : '$label: ${_fmt(value)}',
+        value == null ? '--:--' : _fmt(value),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
     );
   }
 
-  Future<void> _pickDate() async {
+  static String _fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static int _minutes(TimeOfDay t) => t.hour * 60 + t.minute;
+
+  Future<void> _pickTime(BuildContext context, {required bool isStart}) async {
+    final current = isStart
+        ? (start ?? _defaultStart)
+        : (end ?? start ?? _defaultStart);
+    final picked = await showModalBottomSheet<TimeOfDay>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) =>
+          _TimeWheelSheet(title: isStart ? 'Od' : 'Do', initial: current),
+    );
+    if (picked == null) return;
+
+    if (isStart) {
+      // Če "Do" še ni izbran ali bi bil pred novim "Od", ga premaknemo.
+      final newEnd = end == null
+          ? TimeOfDay(
+              hour: (picked.hour + _defaultWindow).clamp(0, 23),
+              minute: picked.minute,
+            )
+          : (_minutes(end!) < _minutes(picked) ? picked : end!);
+      onWindowChanged(picked, newEnd);
+    } else {
+      final s = start ?? picked;
+      // "Do" ne more biti pred "Od"; enaka ura je dovoljena (točna ura).
+      onWindowChanged(_minutes(picked) < _minutes(s) ? picked : s, picked);
+    }
+  }
+
+  Future<void> _pickDate(BuildContext context) async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: widget.date,
+      initialDate: date,
       firstDate: now.subtract(const Duration(days: 7)),
       lastDate: now.add(const Duration(days: 365)),
     );
-    if (picked != null) widget.onDateChanged(picked);
+    if (picked != null) onDateChanged(picked);
+  }
+}
+
+/// Preprosto kolo z urami (korak 30 min) in gumbom "Potrdi".
+class _TimeWheelSheet extends StatefulWidget {
+  const _TimeWheelSheet({required this.title, required this.initial});
+
+  final String title;
+  final TimeOfDay initial;
+
+  @override
+  State<_TimeWheelSheet> createState() => _TimeWheelSheetState();
+}
+
+class _TimeWheelSheetState extends State<_TimeWheelSheet> {
+  static const _step = 30;
+  late TimeOfDay _value = TimeOfDay(
+    hour: widget.initial.hour,
+    minute: widget.initial.minute - widget.initial.minute % _step,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            SizedBox(
+              height: 180,
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.time,
+                use24hFormat: true,
+                minuteInterval: _step,
+                initialDateTime: DateTime(
+                  2000,
+                  1,
+                  1,
+                  _value.hour,
+                  _value.minute,
+                ),
+                onDateTimeChanged: (d) =>
+                    _value = TimeOfDay(hour: d.hour, minute: d.minute),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context, _value),
+                child: const Text('Potrdi'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

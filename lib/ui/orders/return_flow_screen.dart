@@ -77,19 +77,14 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                PlainProgressBar(
-                  done: _scanned.length,
-                  total: items.length,
-                ),
+                PlainProgressBar(done: _scanned.length, total: items.length),
                 const SizedBox(height: 8),
                 Text(
                   '${_scanned.length}/${items.length} poskeniranih',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: allScanned
-                        ? AppColors.ready
-                        : AppColors.textMuted,
+                    color: allScanned ? AppColors.ready : AppColors.textMuted,
                   ),
                 ),
               ],
@@ -188,8 +183,7 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
               if (isAdmin) ...[
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () =>
-                      _override(items.map((e) => e.id).toList()),
+                  onPressed: () => _override(items.map((e) => e.id).toList()),
                   child: const Text(
                     'Zaključi brez podpisa (administrator)',
                     style: TextStyle(color: AppColors.textMuted),
@@ -248,20 +242,18 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
     final state = ref.read(repositoryProvider);
     final order = state.order(widget.orderId)!;
 
-    final result = await Navigator.push<SignatureResult>(
+    final result = await SignatureScreen.show(
       context,
-      MaterialPageRoute(
-        builder: (_) => SignatureScreen(
-          orderNumber: order.number,
-          itemCount: itemIds.length,
-          defaultName: order.customerName,
-        ),
-      ),
+      orderNumber: order.number,
+      itemCount: itemIds.length,
+      defaultName: order.customerName,
     );
     if (result == null || !mounted) return;
 
     final user = ref.read(currentUserProvider);
-    ref.read(repositoryProvider.notifier).completeReturn(
+    ref
+        .read(repositoryProvider.notifier)
+        .completeReturn(
           widget.orderId,
           ReturnProof(
             returnedAt: DateTime.now(),
@@ -274,12 +266,16 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
         );
 
     if (!mounted) return;
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.ready,
-        content: Text('Naročilo ${order.number} zaključeno'),
-      ),
+    _backToList('Naročilo ${order.number} zaključeno');
+  }
+
+  /// Po zaključku nazaj na seznam, od koder je delavec prišel (Naročila ali
+  /// Danes) — ne v podrobnosti že zaključenega naročila.
+  void _backToList(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    messenger.showSnackBar(
+      SnackBar(backgroundColor: AppColors.ready, content: Text(message)),
     );
   }
 
@@ -326,7 +322,9 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
     final state = ref.read(repositoryProvider);
     final order = state.order(widget.orderId)!;
 
-    ref.read(repositoryProvider.notifier).completeReturn(
+    ref
+        .read(repositoryProvider.notifier)
+        .completeReturn(
           widget.orderId,
           ReturnProof(
             returnedAt: DateTime.now(),
@@ -342,6 +340,6 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
         );
 
     if (!mounted) return;
-    Navigator.pop(context);
+    _backToList('Naročilo ${order.number} zaključeno brez podpisa');
   }
 }

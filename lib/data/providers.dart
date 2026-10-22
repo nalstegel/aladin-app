@@ -68,26 +68,18 @@ final todayPickupsProvider = Provider<List<WorkOrder>>((ref) {
   return list;
 });
 
-/// Kaj je danes za vrniti.
+/// Kaj je danes za vrniti: naročila za dostavo, ki so že V kombiju, ali
+/// imajo dogovorjen termin vračila danes (ali prej).
 final todayDeliveriesProvider = Provider<List<WorkOrder>>((ref) {
   final state = ref.watch(repositoryProvider);
   final list = state.orders
       .where((o) =>
           o.status == OrderStatus.awaitingDelivery &&
-          (o.deliveryAt == null || !_isAfterToday(o.deliveryAt!)))
+          (o.inVanAt != null ||
+              (o.deliveryAt != null && !_isAfterToday(o.deliveryAt!))))
       .toList();
-  list.sort((a, b) => (a.deliveryAt ?? a.createdAt)
-      .compareTo(b.deliveryAt ?? b.createdAt));
-  return list;
-});
-
-final awaitingCollectionProvider = Provider<List<WorkOrder>>((ref) {
-  final state = ref.watch(repositoryProvider);
-  final list = state.orders
-      .where((o) => o.status == OrderStatus.awaitingCollection)
-      .toList();
-  list.sort((a, b) =>
-      (a.readyAt ?? a.createdAt).compareTo(b.readyAt ?? b.createdAt));
+  list.sort((a, b) => (a.deliveryAt ?? a.inVanAt ?? a.createdAt)
+      .compareTo(b.deliveryAt ?? b.inVanAt ?? b.createdAt));
   return list;
 });
 
@@ -103,12 +95,45 @@ final productionCountsProvider = Provider<Map<RugStatus, int>>((ref) {
   return counts;
 });
 
-final overdueOrdersProvider = Provider<List<WorkOrder>>((ref) {
+/// Resnični problemi za blok "Potrebna akcija" na Danes (V8 §1). Normalno
+/// čakanje stranke ali nepotekel rok vračila tu NI problem.
+class ActionNeeded {
+  const ActionNeeded({
+    required this.pickupLate,
+    required this.notCalled,
+    required this.stuckItems,
+  });
+
+  /// Naš prevzem pri stranki je zamujen.
+  final List<WorkOrder> pickupLate;
+
+  /// Pripravljeno za osebni prevzem, stranka še ni bila poklicana.
+  final List<WorkOrder> notCalled;
+
+  /// Kosi, obtičali v "Mere in cena" — Hitri obračun jih v normalnem poteku
+  /// preskoči, zato tam ne bi smelo biti nič.
+  final List<RugItem> stuckItems;
+
+  int get total => pickupLate.length + notCalled.length + stuckItems.length;
+}
+
+final actionNeededProvider = Provider<ActionNeeded>((ref) {
   final state = ref.watch(repositoryProvider);
   final now = DateTime.now();
-  final list = state.orders.where((o) => o.isOverdue(now)).toList();
-  list.sort((a, b) => a.dueAt!.compareTo(b.dueAt!));
-  return list;
+  final late = state.orders.where((o) => o.isPickupOverdue(now)).toList()
+    ..sort((a, b) => a.pickupAt!.compareTo(b.pickupAt!));
+  final notCalled = state.orders
+      .where((o) =>
+          o.status == OrderStatus.awaitingCollection && o.calledAt == null)
+      .toList()
+    ..sort((a, b) =>
+        (a.readyAt ?? a.createdAt).compareTo(b.readyAt ?? b.createdAt));
+  final stuck = state.items.where((i) {
+    if (i.status != RugStatus.finishing) return false;
+    final order = state.order(i.orderId);
+    return order != null && order.status.isOpen;
+  }).toList();
+  return ActionNeeded(pickupLate: late, notCalled: notCalled, stuckItems: stuck);
 });
 
 final itemProvider = Provider.family<RugItem?, String>(

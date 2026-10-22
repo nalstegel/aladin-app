@@ -534,6 +534,9 @@ preklop na Blaze, `firebase deploy --only functions`. Na iOS so blokirana
 ### 4.6 — Zebra ZD230 label printing — DONE in code, UNVERIFIED on real hardware (2026-09-17)
 Replaced the A4 PDF label sheet with direct thermal printing on a Zebra
 ZD230 that lives on the shop's LAN. Implementation:
+- **SUPERSEDED (2026-10-21, see §4.11): the label is LANDSCAPE 60×40 mm, not
+  portrait — a photo of a real print proved it. The paragraph below is the
+  old history.**
 - `lib/core/zpl.dart` — pure ZPL template builder (`buildLabelZpl`), no I/O,
   easy to unit-test. Label is **portrait**, 40mm wide × 60mm tall, at 203dpi
   (`labelWidthDots` = 320, `labelHeightDots` = 480 — the only resolution the
@@ -696,6 +699,157 @@ lastnikom pred implementacijo:
   že mimo — ker čakanje na prevzem v delavnico samo po sebi zahteva akcijo.
   Dejansko zamujena naročila (`isOverdue`) imajo prednost in še vedno kažejo
   "Zamuja X dni".
+
+### 4.10 — QA popravki v4 (PDF "ALADIN_APP_QA_popravki_v4_FINAL") — DONE v kodi (2026-09-28)
+Lastnikov QA dokument (v2 + v3 checklist, točke 1–15). Odločitve, potrjene z
+lastnikom pred implementacijo, so označene z ✔.
+
+**Vstop v proces**
+- ✔ **Vsako** novo naročilo (tudi Pripeljano) začne v `awaitingPickup` → zavihek
+  Naročila. V Čaka pranje gre šele ob uspešnem tisku etiket
+  (`Repository.markLabelsPrinted`, kliče ga `labels_screen.dart`) ali ob
+  "Prevzeto pri stranki". Ponovni tisk premakne samo še neprevzete kose.
+  Kos, dodan naročilu pred prevzemom, prav tako počaka v `awaitingPickup`.
+- Etikete po ustvarjanju imajo X (Zapri) — vrne tja, od koder je bilo
+  naročilo ustvarjeno.
+- Območje: `showSelectedIcon: false`, da se "Ljubljana" ne prelomi.
+
+**Stran Naročila** (logika v `lib/data/order_phases.dart`, testi v
+`test/order_phases_test.dart`; `OrderPhase` se je preselil sem iz
+`orders_screen.dart`)
+- Čaka pranje / Sušenje prikazujeta **posamezne kose**, grupirane po naročilu,
+  skupine razvrščene po prihodu (`RugItem.arrivedAt` = prvi prehod v
+  `awaitingWash`), najstarejši zgoraj. Tap na kos v Sušenju odpre Hitri
+  obračun neposredno.
+- ✔ Pripravljeno prikaže **samo v celoti pripravljena** naročila. Že
+  obračunani kosi nedokončanega naročila ostanejo sivo vidni v njegovi skupini
+  v Sušenju. Sub-taba **Pripeljano / Dostave** se razdelita po `handover`
+  (stranka pride / mi dostavimo) — to je natanko "kaj čaka osebni prevzem in
+  kaj moramo peljati na naslov".
+- Iskanje na vrhu (ID naročila ali kosa, ime brez šumnikov, telefon po
+  števkah, naslov) čez vse štiri zavihke; vsak zadetek pove, v katerem zavihku je.
+- `OrderCard`: naročilo pred prevzemom je nevtralno (rdeče samo, ko je termin
+  dejansko mimo — `WorkOrder.isPickupOverdue`), kaže termin, naslov in telefon,
+  brez vrstice "Čaka prevzem v delavnici." in brez "0/n prevzeto". To
+  **nadomešča** pravilo iz §4.9, da je vsako naročilo pred prevzemom rdeče.
+
+**Podrobnosti naročila / termin**
+- Blok Podatki ima stolpec label enake širine; telefon `Fmt.phone`
+  ("031 353 517"), tap = klic; tap na naslov = Apple Maps (iOS) / Google Maps.
+  Nov paket `url_launcher` + `<queries>` za `tel`/`https` v AndroidManifest.
+- `PickupWindowPicker`: namesto preset gumbov ena vrstica "Od [09:00] Do
+  [11:00]", tap odpre kolo (korak 30 min). Enaka ura Od/Do je dovoljena
+  (točna ura).
+
+**Hitri obračun**
+- Mere: 1/2/3 m² + Drugo, dodane standardne 1,2×1,7 / 2,3×1,7 / 3×2 / 3,5×2,5
+  (4 v vrsto, ker so oznake kratke); vrste in doplačila 2 v vrsto, nižji gumbi.
+- ✔ `ExtraTemplate.choices`: postavka z izbiro zneska ob obračunu ("Dlake"
+  5 € ali 10 €). Ureja se v Več → Doplačila (polje "Izbira ob obračunu", npr.
+  `5; 10`).
+
+**Etikete** (`lib/core/zpl.dart` + predogled)
+- Dostave: velik ID kosa (LJ-021-1). Pripeljano: največ ime + telefon + KOS x/y.
+  QR in interni ID ostaneta na obeh. `orderId` ni več parameter
+  `buildLabelZpl` (vsebovan je v ID-ju kosa). **Še ni natisnjeno na pravem
+  ZD230** — preveri, da se dolgo ime v 2 vrsticah + telefon + KOS + ID prilegajo
+  60 mm brez rezanja.
+
+**Vračilo**
+- Podpis se odpre kot sheet (brez vlečenja za zapiranje, da poteza podpisa ne
+  zapre okna); po podpisu ali administratorskem zaključku se aplikacija vrne na
+  seznam (`popUntil(isFirst)`).
+
+**✔ Šifrant ureja lastnik v aplikaciji, ne koda** — vrste in doplačila so v
+Firestoreju, seed je samo demo. Administrator v Več naredi:
+1. Vrste preprog: izbriši **Gumi tepihi** (ostale ostanejo).
+2. Doplačila: izbriši vse obstoječe in dodaj:
+   `Dodatno pranje` +30 %, `Urin` 3 €/m², `Dlake` 5 € z izbiro `5; 10`,
+   `Vnos` 5 €, `Iznos` 5 €. Ročni popust na kos je del zaslona, ne šifranta.
+
+**Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
+`flutter analyze` + testi, ne pa vizualno.
+
+### 4.11 — Clean UX V8 (PDF "ALADIN_APP_CLEAN_UX_V8_FINAL") — DONE v kodi (2026-10-18)
+Veja `feature/ux-v8` (V4 je commitan na `fix/qa-v4`). Odločitve, potrjene z
+lastnikom pred implementacijo, so označene z ✔.
+
+**Potek:** Danes / Hiter vnos → Naročila → Čaka pranje → Sušenje →
+Pripravljeno → Dostave → Predaja / podpis.
+
+- ✔ **Regija DOL** je četrta `OrderLocation` (`dolenjska`, koda `DOL`) z lastnim
+  števcem (`nextOrderSeqDolenjska`, `meta/counters` v Firestoreju, stari
+  dokumenti brez polja → 1). ID-ji `DOL-001-1`. V Hitrem vnosu in Novem naročilu
+  se regija izbira s kodami LJ/MB/CE/DOL (napis "Regija", ne več "Območje").
+- ✔ **Tisk ni prevzem** (obrne QA v4 §2): `markLabelsPrinted` je odstranjen.
+  Kosi gredo iz `awaitingPickup` samo prek `Repository.confirmPickup` — sheet
+  `ui/orders/pickup_sheet.dart` ("Prevzeto pri stranki"). `nextStatusFor`
+  za `awaitingPickup` vrne null, skeniranje takega kosa odpre sheet.
+  Pripeljano: ustvari → sheet → etikete (`continueAfterOrderCreated`); Naš
+  prevzem: ustvari → etikete.
+- ✔ **Doplačila ob prevzemu:** Vnos/Iznos +5 € na naročilo
+  (`WorkOrder.orderExtras`), Urin (3 €/m²) in Dlake (5/10 €) kot oznaka na
+  kosu (`RugItem.extras`) — znesek Urina se izračuna šele ob obračunu po
+  izmerjenih m². Prepoznava po imenu iz šifranta (`orderLevelExtraNames`,
+  `itemPickupExtraNames`, vgrajeni `fallback*` če jih lastnik izbriše).
+  Vnos/Iznos sta skrita v Hitrem obračunu (`ExtraTemplate.isOrderLevel`).
+- ✔ **Dostavno doplačilo** (`WorkOrder.deliveryFee`, 10–50 € po 5 €, 0 = brez):
+  stepper pri Našem prevzemu v Hitrem vnosu, Novem naročilu in Uredi naročilo.
+- ✔ **Obračun naročila** (`lib/data/billing.dart`, `AppState.billing/orderTotal`):
+  kosi + Vnos/Iznos + dostava + **minimum 50 €** (samo kanal `delivery`, šele ko
+  so vsi kosi obračunani; razlika je ločena vrstica, cena kosa ostane ročno
+  popravljiva). Prikazano v Hitrem obračunu (povzetek naročila) in v podrobnostih.
+- **Home (Danes):** Hiter vnos + štirje privzeto zaprti bloki s števcem —
+  Prevzemi danes, Vračila danes (V kombiju ali termin danes), Delavnica
+  (števci Čaka pranje/Sušenje/Pripravljeno/Dostave → odpre zavihek prek
+  `ordersPhaseRequestProvider`), Potrebna akcija (prevzem zamuja, Ni klicano,
+  kosi obtičali v "Mere in cena"). Največ 5 vrstic na blok. Stare ploščice in
+  seznami odstranjeni. Hiter vnos ima povezavo na polni obrazec (B2B…), ker
+  FAB na Naročilih ne obstaja več.
+- **5 top-level zavihkov** (`OrderPhase.deliveries` dodan), števci ob zavihkih
+  (`phaseCounts`): kosi pri Čaka pranje/Sušenje, naročila drugje. Brez + gumba.
+- ✔ **Pripravljeno** je en seznam brez pod-zavihkov: *Ni klicano* → klik na
+  telefon/Pokliči zabeleži `calledAt` (prvi klic) → *Klicano · čaka stranko*;
+  *Za dostavo* z gumbom **V kombi**. Rok vračila = `readyAt` + 10 dni
+  (`returnReminderDays`), siva opomba.
+- ✔ **V kombi** je zastavica `WorkOrder.inVanAt` (ne status): `_recompute` jo (in
+  `calledAt`) počisti, ko naročilo ni več pripravljeno za predajo. **Dostave** =
+  samo `isInVan`; filtri Vse/LJ/MB/CE/DOL, telefon = klic, naslov = Maps,
+  **Odpri pot** (Google Maps, do 10 postankov iz trenutno filtriranega
+  seznama), Vrni (ReturnFlow) in Iz kombija (undo).
+- **Brez "Zamuja":** odstranjeno z OrderCard, Home in iz zvonca (`AlertKind`
+  ima samo `readyForHandover`). Rdeče je samo še zamujen naš prevzem.
+- **Skeniranje:** hitri način je privzeto vklopljen; premik ima haptic +
+  **Razveljavi** (`Repository.undoAdvance`). V Sušenju QR še vedno odpre Hitri
+  obračun (nikoli ne preskoči).
+- **Etikete — popravek 2026-10-21: medij je LEŽEČ 60×40 mm** (`labelWidthDots`
+  = 480, `labelHeightDots` = 320). Fotografija prave natisnjene nalepke je
+  pokazala, da QR in besedilo tečejo vzdolž DALJŠE stranice; prejšnja pokončna
+  predpostavka 40×60 (§4.6) je natisnila samo zgornjih ~40 mm in odrezala
+  x/y, ime in ID. Prva (60×40) različica je imela samo premajhno vsebino, ne
+  napačnega medija. Postavitev je zdaj en opis (`buildLabelLayout` →
+  `LabelLayout`), ki ga uporabljata tisk (ZPL) in predogled v aplikaciji.
+  Zgoraj velika oznaka (+ x/y desno na isti črti), spodaj levo QR (mag. 7),
+  desno besedilo; varni rob 20 pik; ID kosa je na vseh vrstah natisnjen
+  majhno (ročni vnos). Širina pisave 0 ≈ 0.57 × višina na znak
+  (`estimateTextWidth`, izmerjeno na fotografiji) — testi preverjajo, da se
+  velika oznaka in x/y ne prekrivata. Vrste: regija (MB/CE/DOL,
+  ne glede na način) = velika oznaka + x/4 + ime/telefon + QR; LJ dostava =
+  velik ID naročila (LJ-099) + 3/4 + QR, manjše ime; LJ Pripeljano = veliko ime
+  + telefon + 3/4 + QR. Brez prevzemne točke in brez mer. QR vsebuje še vedno
+  polni ID kosa. **Print all** + **Natisni izbrane** (izbira kosov na
+  predogledu) + ponatis iz podrobnosti kosa. **Nova ležeča postavitev še ni
+  natisnjena** — natisni po eno nalepko vsake vrste in preveri rob/sponke.
+- ✔ Seed: vrste "Navadna / sintetika", Shaggy, Volna, "Perzijska / ročno
+  vozlana", doplačilo "Ponovno pranje" (+30 %). Šifrant v Firestoreju
+  (lastnik v aplikaciji) se NE spremeni sam — preimenuj ročno v Več.
+- ✔ Izpuščeno ("Kasneje" v PDF): autocomplete naslovov, review QR + SMS,
+  plačano/neplačano.
+
+**Testi:** `test/v8_flow_test.dart` (DOL, prevzem z doplačili, obračun +
+minimum, V kombi/Dostave, Klicano, Undo), `test/zpl_test.dart` prepisan.
+**Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
+`flutter analyze` + testi, ne pa vizualno.
 
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter

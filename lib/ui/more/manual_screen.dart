@@ -20,42 +20,48 @@ class ManualScreen extends StatelessWidget {
           _Step(
             n: '1',
             title: 'Sprejem naročila',
-            body: 'Naročilo → Novo naročilo. Izbereš stranko (ali jo dodaš), '
-                'vpišeš število kosov in rok. Aplikacija sama naredi etikete '
-                'za vsak kos posebej.',
+            body: 'Na zaslonu Danes odpreš Hiter vnos naročila: telefon, ime, '
+                'Pripeljano ali Naš prevzem, regija (LJ / MB / CE / DOL) in '
+                'število kosov. Aplikacija sama naredi etikete za vsak kos '
+                'posebej.',
           ),
           _Step(
             n: '2',
             title: 'Etikete',
-            body: 'V naročilu tapneš ikono QR in natisneš polo. Na vsaki '
-                'etiketi so ime stranke, številka naročila, KOS x/y in koda.',
+            body: 'Po ustvarjanju naročila se odpre tisk etiket. Posamezno '
+                'etiketo ponatisneš z izbiro kosa (Natisni izbrane), vse '
+                'naenkrat z Natisni vse. Tisk nikoli ne spremeni statusa.',
           ),
           _Step(
             n: '3',
             title: 'Prevzem',
-            body: 'Ko preproge pridejo v obrat, na zaslonu Danes tapneš '
-                'Prevzemi. Vsi kosi naročila gredo na pranje.',
+            body: 'Ko je preproga fizično prevzeta, tapneš Prevzeto pri '
+                'stranki. V kratkem koraku označiš samo doplačila, ki dejansko '
+                'veljajo (Vnos, Iznos, Urin, Dlake), in potrdiš — šele takrat '
+                'kosi gredo v Čaka pranje.',
           ),
           _Step(
             n: '4',
             title: 'Pranje in sušenje',
-            body: 'Ob stroju vklopiš Hitri način v zavihku Skeniraj. Vsak '
-                'skeniran kos gre samodejno korak naprej — brez dotikanja '
-                'zaslona z mokrimi rokami.',
+            body: 'Ob stroju skeniraš v zavihku Skeniraj. Vsak skeniran kos '
+                'gre samodejno korak naprej (kratek odziv, Razveljavi je ob '
+                'roki) — brez dotikanja zaslona z mokrimi rokami.',
           ),
           _Step(
             n: '5',
             title: 'Mere in cena',
-            body: 'Ko je preproga suha, jo skeniraš in vpišeš širino, dolžino '
-                'in vrsto. Aplikacija izračuna m² in osnovno ceno. Pri končni '
-                'obdelavi dodaš doplačila ali popust in potrdiš ceno — kos '
-                'postane Pripravljeno.',
+            body: 'Ko je preproga suha, jo skeniraš ali tapneš v Sušenju. V '
+                'Hitrem obračunu izbereš vrsto in mere; Urin in Dlake so že '
+                'označeni, če so bili vneseni ob prevzemu. Končno ceno lahko '
+                'popraviš ročno — kos postane Pripravljeno.',
           ),
           _Step(
             n: '6',
             title: 'Vračilo',
-            body: 'Ko so vsi kosi pripravljeni, se naročilo samo prestavi med '
-                'čakajoča. Pri predaji odpreš Vrni, poskeniraš vse kose in '
+            body: 'Ko so vsi kosi pripravljeni, je naročilo v Pripravljeno. '
+                'Osebni prevzem: pokličeš stranko (zabeleži se Klicano). '
+                'Dostava: tapneš V kombi in naročilo se prestavi v zavihek '
+                'Dostave. Pri predaji preveriš vse kose (sken ali kljukica) in '
                 'stranka se podpiše na telefon.',
             last: true,
           ),

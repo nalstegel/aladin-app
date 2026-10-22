@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -6,6 +7,7 @@ import '../../core/scan.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
+import '../orders/pickup_sheet.dart';
 import '../orders/return_flow_screen.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
@@ -41,10 +43,13 @@ const _shortcuts = [
 
 class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   MobileScannerController? _controller;
-  bool _quickMode = false;
+  // Skeniranje premakne kos v naslednjo fazo (V8 §3), z Undo. Hitri način je
+  // zato privzeto vklopljen; izklopljen skeniranje samo odpre podrobnosti.
+  bool _quickMode = true;
   String? _lastCode;
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
   String? _flash;
+  String? _undoItemId;
   Color _flashColor = AppColors.ready;
 
   @override
@@ -108,6 +113,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       return;
     }
 
+    // Prevzem je vedno hiter korak z doplačili — skeniranje ga ne preskoči.
+    if (item.status == RugStatus.awaitingPickup) {
+      PickupSheet.show(context, item.orderId);
+      return;
+    }
+
     if (!_quickMode) {
       _openForStatus(item.id, item.status, item.orderId);
       return;
@@ -121,7 +132,12 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       return;
     }
     repo.advance(item.id);
-    _showFlash('${item.id} → ${next.label}', AppColors.forRug(next));
+    HapticFeedback.mediumImpact();
+    _showFlash(
+      '${item.id} → ${next.label}',
+      AppColors.forRug(next),
+      undoItemId: item.id,
+    );
   }
 
   /// Pripravljen kos vodi naravnost v postopek vračila njegovega naročila —
@@ -148,13 +164,34 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     );
   }
 
-  void _showFlash(String message, Color color) {
+  void _showFlash(String message, Color color, {String? undoItemId}) {
     setState(() {
       _flash = message;
       _flashColor = color;
+      _undoItemId = undoItemId;
     });
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _flash = null);
+    final shown = message;
+    Future.delayed(Duration(seconds: undoItemId == null ? 2 : 4), () {
+      // Novejše sporočilo ne sme biti pokrito s časovnikom starega.
+      if (mounted && _flash == shown) {
+        setState(() {
+          _flash = null;
+          _undoItemId = null;
+        });
+      }
+    });
+  }
+
+  void _undo() {
+    final id = _undoItemId;
+    if (id == null) return;
+    ref.read(repositoryProvider.notifier).undoAdvance(id);
+    HapticFeedback.lightImpact();
+    setState(() {
+      _flash = null;
+      _undoItemId = null;
+      // Ista koda se sme takoj skenirati znova.
+      _lastCode = null;
     });
   }
 
@@ -313,13 +350,37 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
                       color: _flashColor,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
-                      _flash!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _flash!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        if (_undoItemId != null)
+                          TextButton(
+                            onPressed: _undo,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(0, 28),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                            ),
+                            child: const Text(
+                              'Razveljavi',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),

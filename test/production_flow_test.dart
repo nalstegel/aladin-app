@@ -27,6 +27,11 @@ void main() {
     );
 
     expect(repo.state.itemsOf(order.id).length, 3);
+    // Brez natisnjenih etiket naročilo ostane v zavihku "Naročila".
+    expect(repo.state.item('${order.id}-1')!.status, RugStatus.awaitingPickup);
+    expect(repo.state.order(order.id)!.status, OrderStatus.scheduledPickup);
+
+    repo.markOrderPickedUp(order.id);
     expect(repo.state.item('${order.id}-1')!.status, RugStatus.awaitingWash);
     expect(repo.state.order(order.id)!.status, OrderStatus.inProduction);
 
@@ -92,9 +97,10 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     // Navadna: 12 €/m², minimalni obračun 3 m².
-    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Navadna');
+    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Navadna / sintetika');
 
     repo.advance(id);
     repo.setMeasurements(id, widthCm: 100, lengthCm: 100, rugType: type);
@@ -113,6 +119,7 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Volna');
     repo.advance(id);
@@ -142,6 +149,7 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: 2,
     );
+    repo.markOrderPickedUp(order.id);
     final type = repo.state.rugTypes.first;
     for (var n = 1; n <= 2; n++) {
       final id = '${order.id}-$n';
@@ -180,6 +188,7 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Volna');
     repo.advance(id);
@@ -218,6 +227,7 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     final type = repo.state.rugTypes.first;
     repo.advance(id);
@@ -240,6 +250,7 @@ void main() {
       handover: HandoverMode.customerCollects,
       itemCount: 3,
     );
+    repo.markOrderPickedUp(order.id);
 
     repo.removeItemFromOrder('${order.id}-2');
 
@@ -253,5 +264,37 @@ void main() {
     expect(() => repo.removeItemFromOrder('${order.id}-3'),
         throwsA(isA<StateError>()));
     expect(repo.state.itemsOf(order.id).length, 1);
+  });
+
+  test('ponoven tisk etiket ne premakne kosov, ki so že v procesu', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 2,
+    );
+    repo.markOrderPickedUp(order.id);
+    repo.advance('${order.id}-1');
+    expect(repo.state.item('${order.id}-1')!.status, RugStatus.drying);
+
+    repo.markOrderPickedUp(order.id);
+    expect(repo.state.item('${order.id}-1')!.status, RugStatus.drying);
+    expect(repo.state.item('${order.id}-2')!.status, RugStatus.awaitingWash);
+  });
+
+  test('kos, dodan naročilu pred prevzemom, počaka z ostalimi', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.delivery,
+      handover: HandoverMode.weDeliver,
+      itemCount: 1,
+      pickupAt: DateTime.now().add(const Duration(days: 2)),
+    );
+    final added = repo.addItemToOrder(order.id);
+
+    expect(added.status, RugStatus.awaitingPickup);
+    expect(repo.state.order(order.id)!.status, OrderStatus.scheduledPickup);
   });
 }
