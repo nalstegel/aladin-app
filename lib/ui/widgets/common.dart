@@ -650,18 +650,26 @@ class FilterPill extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.dense = false,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
+  /// Manjša različica za vrstico filtrov regij (Pripravljeno, Dostave), da
+  /// gredo vsi filtri Vse / LJ / MB / CE / DOL na zaslon brez drsenja.
+  final bool dense;
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+        padding: EdgeInsets.symmetric(
+          horizontal: dense ? 11 : 15,
+          vertical: dense ? 6 : 8,
+        ),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary : Colors.white,
           borderRadius: BorderRadius.circular(999),
@@ -672,7 +680,7 @@ class FilterPill extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: dense ? 12 : 13,
             fontWeight: FontWeight.w600,
             color: selected ? Colors.white : AppColors.textMuted,
           ),
@@ -708,4 +716,29 @@ class SearchField extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Majhen podnapis nad seznamom, ki pove, kaj števec šteje: "46 naročil" ali
+/// "68 kosov" (V10 §5). Zavihka Čaka pranje in Sušenje štejeta kose, ostali
+/// naročila — brez enote bi se števca videla kot napačna.
+class UnitCaption extends StatelessWidget {
+  const UnitCaption(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 12, 16, 0),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textMuted,
+        ),
+      ),
+    ),
+  );
 }

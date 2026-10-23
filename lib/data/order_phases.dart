@@ -54,6 +54,26 @@ extension OrderPhaseX on OrderPhase {
   }
 }
 
+/// Vrstni red naročil v kombiju (V10 §3): ročno razvrščena po `vanOrder`.
+/// Naročila brez številke (iz časa pred ročnim razvrščanjem) so pred njimi, po
+/// času dogovorjenega vračila — nova naročila so tako vedno na koncu.
+List<WorkOrder> sortedForVan(Iterable<WorkOrder> orders) {
+  DateTime key(WorkOrder o) => o.deliveryAt ?? o.inVanAt ?? o.createdAt;
+  return orders.toList()
+    ..sort((a, b) {
+      final ar = a.vanOrder;
+      final br = b.vanOrder;
+      if (ar != null && br != null) {
+        final c = ar.compareTo(br);
+        return c != 0 ? c : a.id.compareTo(b.id);
+      }
+      if (ar != null) return 1;
+      if (br != null) return -1;
+      final c = key(a).compareTo(key(b));
+      return c != 0 ? c : a.id.compareTo(b.id);
+    });
+}
+
 /// Zavihki, v katerih se naročilo trenutno nahaja — za prikaz rezultatov
 /// iskanja ("v katerem tabu je").
 List<OrderPhase> phasesOf(WorkOrder order, List<RugItem> items) => [

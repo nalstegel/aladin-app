@@ -15,6 +15,9 @@ import '../../models/return_proof.dart';
 import '../../models/rug_item.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
+import '../widgets/undo_snackbar.dart';
+import 'call_customer.dart';
+import 'edit_customer_sheet.dart';
 import 'edit_order_screen.dart';
 import 'labels_screen.dart';
 import 'pickup_sheet.dart';
@@ -67,7 +70,18 @@ class OrderDetailScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
           _header(context, ref, ready, items.length),
-          const SectionHeader('Podatki'),
+          SectionHeader(
+            'Podatki',
+            // Ime, telefon in naslov se popravijo kar tu (V10 §1); "Zamenjaj
+            // stranko" ostane v Uredi naročilo samo za pravo menjavo.
+            trailing: order.status.isOpen
+                ? TextButton.icon(
+                    onPressed: () => EditCustomerSheet.show(context, orderId),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Uredi'),
+                  )
+                : null,
+          ),
           AppCard(
             child: Column(
               children: [
@@ -77,11 +91,9 @@ class OrderDetailScreen extends ConsumerWidget {
                     'Telefon',
                     Fmt.phone(order.customerPhone),
                     icon: Icons.call,
-                    onTap: () => _launch(
-                      context,
-                      callPhone(order.customerPhone),
-                      'Klica ni bilo mogoče začeti.',
-                    ),
+                    // Klic iz podrobnosti se zabeleži enako kot iz seznama
+                    // Pripravljeno (V10 §2).
+                    onTap: () => callCustomer(context, ref, order),
                   ),
                 if (order.customerAddress.isNotEmpty)
                   _InfoRow(
@@ -431,10 +443,10 @@ class OrderDetailScreen extends ConsumerWidget {
                   ? FilledButton.icon(
                       onPressed: () {
                         repo.sendToVan(orderId);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${order.number} je v kombiju.'),
-                          ),
+                        showUndoSnackBar(
+                          context,
+                          '${order.number} je v kombiju.',
+                          () => repo.removeFromVan(orderId),
                         );
                       },
                       icon: const Icon(Icons.local_shipping),

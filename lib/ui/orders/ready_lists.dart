@@ -9,6 +9,8 @@ import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../widgets/common.dart';
+import '../widgets/undo_snackbar.dart';
+import 'call_customer.dart';
 import 'order_detail_screen.dart';
 import 'pickup_sheet.dart';
 import 'return_flow_screen.dart';
@@ -31,44 +33,88 @@ void _openOrder(BuildContext context, WorkOrder order) => Navigator.push(
   MaterialPageRoute(builder: (_) => OrderDetailScreen(orderId: order.id)),
 );
 
-class _GroupLabel extends StatelessWidget {
-  const _GroupLabel(this.label, this.count);
+/// Vrstica filtrov Vse / LJ / MB / CE / DOL — enaka v Pripravljeno in Dostave
+/// (V10 §2). Regije se berejo iz `OrderLocation.values`, zato nova regija
+/// dobi svoj filter sama, brez dela v tem zaslonu.
+class RegionFilterBar extends StatelessWidget {
+  const RegionFilterBar({
+    super.key,
+    required this.selected,
+    required this.onSelected,
+    required this.total,
+    required this.countOf,
+  });
 
-  final String label;
-  final int count;
+  /// null = Vse.
+  final OrderLocation? selected;
+  final ValueChanged<OrderLocation?> onSelected;
+  final int total;
+  final int Function(OrderLocation) countOf;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
-    child: Text(
-      '${label.toUpperCase()} · $count',
-      style: const TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 0.6,
-        color: AppColors.textMuted,
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            FilterPill(
+              dense: true,
+              label: 'Vse ($total)',
+              selected: selected == null,
+              onTap: () => onSelected(null),
+            ),
+            for (final l in OrderLocation.values) ...[
+              const SizedBox(width: 6),
+              FilterPill(
+                dense: true,
+                label: '${l.code} (${countOf(l)})',
+                selected: selected == l,
+                onTap: () => onSelected(l),
+              ),
+            ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
-/// Zavihek **Pripravljeno** (V8 §4): cela naročila, v katerih so vsi kosi
-/// obračunani. En seznam, brez pod-zavihkov:
+/// Katere sekcije Pripravljeno so razprte. Privzeto so vse zaprte (V10 §2:
+/// manj scrollanja); izbira ostane, ko zamenjaš zavihek.
+final readyOpenSectionsProvider = StateProvider<Set<String>>(
+  (ref) => const {},
+);
+
+/// Zavihek **Pripravljeno** (V8 §4, V10 §2): cela naročila, v katerih so vsi
+/// kosi obračunani. En seznam, brez pod-zavihkov:
 ///
-/// * osebni prevzem: *Ni klicano* → klik na telefon zabeleži *Klicano …* →
-///   *Čaka stranko* (nič od tega ni rdeče),
-/// * dostava: glavna akcija **V kombi** premakne naročilo v zavihek Dostave.
-class ReadyList extends ConsumerWidget {
+/// * filtri regij,
+/// * *Za dostavo* z gumbom **V kombi** (naročilo gre v zavihek Dostave),
+/// * *Ni klicano* → klic zabeleži `calledAt` → *Klicano · čaka stranko*
+///   (nič od tega ni rdeče).
+///
+/// Sekcije so zložljive in kažejo število naročil; prazna sekcija je skrita.
+class ReadyList extends ConsumerStatefulWidget {
   const ReadyList({super.key, this.channel});
 
   final OrderChannel? channel;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReadyList> createState() => _ReadyListState();
+}
+
+class _ReadyListState extends ConsumerState<ReadyList> {
+  /// null = Vse.
+  OrderLocation? _region;
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final all =
         state.orders
-            .where((o) => channel == null || o.channel == channel)
+            .where((o) => widget.channel == null || o.channel == widget.channel)
             .where((o) => OrderPhase.ready.containsOrder(o, state.itemsOf(o.id)))
             .toList()
           ..sort(
@@ -84,49 +130,161 @@ class ReadyList extends ConsumerWidget {
       );
     }
 
-    final notCalled = all
+    final shown = all
+        .where((o) => _region == null || o.location == _region)
+        .toList();
+    final delivery = shown
+        .where((o) => o.handover == HandoverMode.weDeliver)
+        .toList();
+    final notCalled = shown
         .where(
           (o) =>
               o.handover == HandoverMode.customerCollects && o.calledAt == null,
         )
         .toList();
-    final delivery = all
-        .where((o) => o.handover == HandoverMode.weDeliver)
-        .toList();
-    final waiting = all
+    final waiting = shown
         .where(
           (o) =>
               o.handover == HandoverMode.customerCollects && o.calledAt != null,
         )
         .toList();
 
-    Widget group(String label, List<WorkOrder> list) => list.isEmpty
-        ? const SizedBox.shrink()
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _GroupLabel(label, list.length),
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
+    return Column(
+      children: [
+        RegionFilterBar(
+          selected: _region,
+          onSelected: (r) => setState(() => _region = r),
+          total: all.length,
+          countOf: (l) => all.where((o) => o.location == l).length,
+        ),
+        UnitCaption(Fmt.orders(shown.length)),
+        Expanded(
+          child: shown.isEmpty
+              ? EmptyState(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'Nič ni pripravljeno',
+                  message: 'V regiji ${_region!.code} ni pripravljenih naročil.',
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
                   children: [
-                    for (var i = 0; i < list.length; i++) ...[
-                      if (i > 0) const Divider(height: 1),
-                      _ReadyRow(order: list[i]),
-                    ],
+                    _ReadySection(
+                      id: 'delivery',
+                      label: 'Za dostavo',
+                      icon: Icons.local_shipping_outlined,
+                      orders: delivery,
+                    ),
+                    _ReadySection(
+                      id: 'notCalled',
+                      label: 'Ni klicano',
+                      icon: Icons.phone_missed_outlined,
+                      orders: notCalled,
+                    ),
+                    _ReadySection(
+                      id: 'waiting',
+                      label: 'Klicano · čaka stranko',
+                      icon: Icons.phone_in_talk_outlined,
+                      orders: waiting,
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Zložljiva sekcija s številom naročil; prazna se ne pokaže.
+class _ReadySection extends ConsumerWidget {
+  const _ReadySection({
+    required this.id,
+    required this.label,
+    required this.icon,
+    required this.orders,
+  });
+
+  final String id;
+  final String label;
+  final IconData icon;
+  final List<WorkOrder> orders;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (orders.isEmpty) return const SizedBox.shrink();
+    final open = ref.watch(readyOpenSectionsProvider).contains(id);
+
+    void toggle() {
+      final notifier = ref.read(readyOpenSectionsProvider.notifier);
+      final next = {...notifier.state};
+      if (!next.remove(id)) next.add(id);
+      notifier.state = next;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: toggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 20, color: AppColors.ready),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.ready.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${orders.length}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.ready,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      open ? Icons.expand_less : Icons.expand_more,
+                      color: AppColors.textMuted,
+                    ),
                   ],
                 ),
               ),
+            ),
+            if (open) ...[
+              const Divider(height: 1),
+              for (var i = 0; i < orders.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                _ReadyRow(order: orders[i]),
+              ],
             ],
-          );
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-      children: [
-        group('Ni klicano', notCalled),
-        group('Za dostavo', delivery),
-        group('Klicano · čaka stranko', waiting),
-      ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -164,29 +322,19 @@ class _ReadyRow extends ConsumerWidget {
       ].join(' · ');
     }
 
-    Future<void> call() async {
-      // Klik na telefon zabeleži prvi klic (V8 §4), nato odpre klicalnik.
-      repo.markCalled(order.id);
-      await _launch(
-        context,
-        callPhone(order.customerPhone),
-        'Klica ni bilo mogoče začeti.',
-      );
-    }
+    // Klik na telefon zabeleži prvi klic (V8 §4), nato odpre klicalnik — enako
+    // kot klic iz podrobnosti naročila (V10 §2).
+    void call() => callCustomer(context, ref, order);
 
     final Widget action;
     if (delivery) {
       action = FilledButton(
         onPressed: () {
           repo.sendToVan(order.id);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${order.number} je v kombiju.'),
-              action: SnackBarAction(
-                label: 'Razveljavi',
-                onPressed: () => repo.removeFromVan(order.id),
-              ),
-            ),
+          showUndoSnackBar(
+            context,
+            '${order.number} je v kombiju.',
+            () => repo.removeFromVan(order.id),
           );
         },
         style: _smallButton(),
@@ -278,9 +426,14 @@ ButtonStyle _smallButton() => FilledButton.styleFrom(
   textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
 );
 
-/// Peti zavihek **Dostave** (V8 §4): manifest robe v kombiju. Vsebuje samo
-/// naročila, označena V kombi; naročilo ga zapusti šele z vračilom (preverjanje
-/// kosov → podpis → Vrnjeno) ali z "Iz kombija".
+/// Peti zavihek **Dostave** (V8 §4, V10 §3): manifest robe v kombiju. Vsebuje
+/// samo naročila, označena V kombi; naročilo ga zapusti šele z vračilom
+/// (preverjanje kosov → podpis → Vrnjeno) ali z "Iz kombija".
+///
+/// Vrstni red je ročen: kartico primeš za ročaj (ali jo dolgo pritisneš) in
+/// povlečeš gor/dol. Shrani se v bazi (`WorkOrder.vanOrder`), zato ostane po
+/// menjavi zavihka in ponovnem zagonu. Poti ne generiramo — ruto sestavi
+/// voznik sproti in Maps odpre sam.
 class DeliveriesList extends ConsumerStatefulWidget {
   const DeliveriesList({super.key, this.channel});
 
@@ -297,61 +450,24 @@ class _DeliveriesListState extends ConsumerState<DeliveriesList> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
-    final all =
-        state.orders
-            .where((o) => widget.channel == null || o.channel == widget.channel)
-            .where(
-              (o) => OrderPhase.deliveries.containsOrder(o, state.itemsOf(o.id)),
-            )
-            .toList()
-          ..sort(
-            (a, b) => (a.deliveryAt ?? a.inVanAt ?? a.createdAt).compareTo(
-              b.deliveryAt ?? b.inVanAt ?? b.createdAt,
-            ),
-          );
+    final all = sortedForVan(
+      state.orders
+          .where((o) => widget.channel == null || o.channel == widget.channel)
+          .where(
+            (o) => OrderPhase.deliveries.containsOrder(o, state.itemsOf(o.id)),
+          ),
+    );
     final list = all.where((o) => _region == null || o.location == _region).toList();
-    int count(OrderLocation l) => all.where((o) => o.location == l).length;
-
-    final withAddress = list.where((o) => o.customerAddress.isNotEmpty).toList();
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                FilterPill(
-                  label: 'Vse (${all.length})',
-                  selected: _region == null,
-                  onTap: () => setState(() => _region = null),
-                ),
-                for (final l in OrderLocation.values) ...[
-                  const SizedBox(width: 8),
-                  FilterPill(
-                    label: '${l.code} (${count(l)})',
-                    selected: _region == l,
-                    onTap: () => setState(() => _region = l),
-                  ),
-                ],
-              ],
-            ),
-          ),
+        RegionFilterBar(
+          selected: _region,
+          onSelected: (r) => setState(() => _region = r),
+          total: all.length,
+          countOf: (l) => all.where((o) => o.location == l).length,
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: withAddress.isEmpty
-                  ? null
-                  : () => _openRoute(context, withAddress),
-              icon: const Icon(Icons.alt_route, size: 18),
-              label: Text('Odpri pot · ${withAddress.length} postankov'),
-            ),
-          ),
-        ),
+        UnitCaption(Fmt.orders(list.length)),
         Expanded(
           child: list.isEmpty
               ? const EmptyState(
@@ -361,46 +477,35 @@ class _DeliveriesListState extends ConsumerState<DeliveriesList> {
                       'Naročila za dostavo se tu pokažejo, ko jih v '
                       'Pripravljeno označiš V kombi.',
                 )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+              : ReorderableListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                   itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _DeliveryRow(order: list[i]),
+                  onReorderItem: (oldIndex, newIndex) {
+                    final ids = [for (final o in list) o.id];
+                    ids.insert(newIndex, ids.removeAt(oldIndex));
+                    // Pri filtriranem seznamu je to samo podmnožica — ostale
+                    // regije obdržijo svoja mesta.
+                    ref.read(repositoryProvider.notifier).reorderVan(ids);
+                  },
+                  itemBuilder: (_, i) => Padding(
+                    key: ValueKey(list[i].id),
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _DeliveryRow(order: list[i], index: i),
+                  ),
                 ),
         ),
       ],
     );
   }
-
-  Future<void> _openRoute(BuildContext context, List<WorkOrder> orders) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final addresses = [for (final o in orders) o.customerAddress];
-    if (addresses.length > maxRouteStops) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Zemljevid prenese največ $maxRouteStops postankov — odprtih '
-            'je prvih $maxRouteStops.',
-          ),
-        ),
-      );
-    }
-    var ok = false;
-    try {
-      ok = await openMapsRoute(addresses);
-    } catch (_) {}
-    if (!ok) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Zemljevida ni bilo mogoče odpreti.')),
-      );
-    }
-  }
 }
 
 class _DeliveryRow extends ConsumerWidget {
-  const _DeliveryRow({required this.order});
+  const _DeliveryRow({required this.order, required this.index});
 
   final WorkOrder order;
+
+  /// Mesto v prikazanem seznamu — za ročaj in zaporedno številko.
+  final int index;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -409,11 +514,10 @@ class _DeliveryRow extends ConsumerWidget {
     final total = state.orderTotal(order.id);
     final repo = ref.read(repositoryProvider.notifier);
 
-    Widget link(IconData icon, String text, Future<bool> Function() action,
-        String error) {
+    Widget link(IconData icon, String text, VoidCallback action) {
       return InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => _launch(context, action(), error),
+        onTap: action,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
@@ -446,6 +550,32 @@ class _DeliveryRow extends ConsumerWidget {
         children: [
           Row(
             children: [
+              // Majhen ročaj za vlečenje; dolg pritisk kjerkoli na kartici
+              // deluje enako.
+              ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8, top: 2, bottom: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.drag_indicator,
+                        size: 22,
+                        color: AppColors.textMuted,
+                      ),
+                      Text(
+                        '${index + 1}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               Expanded(
                 child: Text(
                   '${order.number}  ${order.customerName}',
@@ -480,15 +610,17 @@ class _DeliveryRow extends ConsumerWidget {
             link(
               Icons.phone_outlined,
               Fmt.phone(order.customerPhone),
-              () => callPhone(order.customerPhone),
-              'Klica ni bilo mogoče začeti.',
+              () => callCustomer(context, ref, order),
             ),
           if (order.customerAddress.isNotEmpty)
             link(
               Icons.place_outlined,
               order.customerAddress,
-              () => openMaps(order.customerAddress),
-              'Zemljevida ni bilo mogoče odpreti.',
+              () => _launch(
+                context,
+                openMaps(order.customerAddress),
+                'Zemljevida ni bilo mogoče odpreti.',
+              ),
             ),
           const SizedBox(height: 8),
           Row(

@@ -69,6 +69,12 @@ class WorkOrder {
   /// Zabeleži se prvi klic.
   final DateTime? calledAt;
 
+  /// Ročni vrstni red v zavihku Dostave (V10 §3): manjša številka = prej.
+  /// Shrani se v bazi, zato ga vidijo vsi telefoni in preživi ponovni zagon.
+  /// Smiselna je samo, dokler je naročilo V kombiju; `Repository.sendToVan` jo
+  /// ob nalaganju vedno znova postavi na konec.
+  final int? vanOrder;
+
   const WorkOrder({
     required this.id,
     required this.location,
@@ -94,6 +100,7 @@ class WorkOrder {
     this.orderExtras = const [],
     this.inVanAt,
     this.calledAt,
+    this.vanOrder,
   });
 
   String get number => id;
@@ -139,6 +146,7 @@ class WorkOrder {
     List<AppliedExtra>? orderExtras,
     DateTime? inVanAt,
     DateTime? calledAt,
+    int? vanOrder,
     bool clearInVanAt = false,
     bool clearCalledAt = false,
     bool clearReadyAt = false,
@@ -174,6 +182,7 @@ class WorkOrder {
       orderExtras: orderExtras ?? this.orderExtras,
       inVanAt: clearInVanAt ? null : (inVanAt ?? this.inVanAt),
       calledAt: clearCalledAt ? null : (calledAt ?? this.calledAt),
+      vanOrder: clearInVanAt ? null : (vanOrder ?? this.vanOrder),
     );
   }
 
@@ -202,6 +211,7 @@ class WorkOrder {
         'orderExtras': orderExtras.map((e) => e.toJson()).toList(),
         'inVanAt': inVanAt?.toIso8601String(),
         'calledAt': calledAt?.toIso8601String(),
+        'vanOrder': vanOrder,
       };
 
   factory WorkOrder.fromJson(Map<String, dynamic> j) {
@@ -239,6 +249,7 @@ class WorkOrder {
           .toList(),
       inVanAt: d('inVanAt'),
       calledAt: d('calledAt'),
+      vanOrder: j['vanOrder'] as int?,
     );
   }
 }

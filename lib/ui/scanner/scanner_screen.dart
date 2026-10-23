@@ -3,9 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../core/format.dart';
+import '../../core/review.dart';
 import '../../core/scan.dart';
 import '../../core/theme.dart';
+import '../../core/zpl.dart';
 import '../../data/providers.dart';
+import '../../data/zebra_printer.dart';
 import '../../models/enums.dart';
 import '../orders/pickup_sheet.dart';
 import '../orders/return_flow_screen.dart';
@@ -51,6 +55,7 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
   String? _flash;
   String? _undoItemId;
   Color _flashColor = AppColors.ready;
+  bool _printingReview = false;
 
   @override
   void initState() {
@@ -241,6 +246,33 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
     _handle(normalized);
   }
 
+  /// Generična nalepka za Google oceno (V10 §4): ni vezana na naročilo, gumb
+  /// se sme pritisniti kadarkoli in kolikorkrat treba.
+  Future<void> _printReview() async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (googleReviewUrl.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Povezava za Google oceno še ni nastavljena.'),
+        ),
+      );
+      return;
+    }
+    setState(() => _printingReview = true);
+    try {
+      await ref
+          .read(zebraPrinterServiceProvider)
+          .print(buildReviewZpl(googleReviewUrl));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Nalepka Google ocene poslana na tiskalnik.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Tiskanje ni uspelo: $e')));
+    } finally {
+      if (mounted) setState(() => _printingReview = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final counts = ref.watch(productionCountsProvider);
@@ -291,12 +323,28 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Center(
-              child: TextButton.icon(
-                onPressed: _manualEntry,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('Ročni vnos kode'),
-              ),
+            // Pripomočki, ki niso vezani na posamezen kos.
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  onPressed: _manualEntry,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Ročni vnos kode'),
+                ),
+                TextButton.icon(
+                  onPressed: _printingReview ? null : _printReview,
+                  icon: _printingReview
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.star_outline, size: 18),
+                  label: const Text('Natisni Google oceno'),
+                ),
+              ],
             ),
           ],
         ),
@@ -310,8 +358,9 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
           color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(999),
         ),
+        // Skener šteje kose, ne naročil — enota je izpisana (V10 §5).
         child: Text(
-          '$n',
+          Fmt.pieces(n),
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w800,

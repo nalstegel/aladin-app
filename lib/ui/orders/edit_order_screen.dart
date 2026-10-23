@@ -178,9 +178,11 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
                 ],
               ),
             ),
+            // Ime, telefon in naslov se urejajo na podrobnostih naročila;
+            // tu je samo prava menjava na drugo stranko.
             TextButton(
               onPressed: () => setState(() => _pickingCustomer = true),
-              child: const Text('Zamenjaj'),
+              child: const Text('Zamenjaj stranko'),
             ),
           ],
         ),
