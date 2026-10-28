@@ -13,6 +13,7 @@ import '../models/return_proof.dart';
 import '../models/rug_item.dart';
 import '../models/status_event.dart';
 import 'app_state.dart';
+import 'order_phases.dart';
 import 'seed.dart';
 import 'store.dart';
 
@@ -426,18 +427,56 @@ class Repository extends StateNotifier<AppState> {
 
   /// Stranko smo poklicali (osebni prevzem): prvi klic se zabeleži, ponovni
   /// ne prepiše časa — vrstica kaže "Klicano 6. 10. 14:30".
+  ///
+  /// Kliče ga vsak vstopni kanal za klic (seznam Pripravljeno, podrobnosti
+  /// naročila), zato sam preveri, da je klic sploh pomemben: samo naročilo, ki
+  /// čaka stranko, ima Klicano — drugje bi `_recompute` zapis tako ali tako
+  /// pobrisal.
   void markCalled(String orderId) {
     final order = state.order(orderId);
     if (order == null || order.calledAt != null) return;
+    if (order.status != OrderStatus.awaitingCollection) return;
     updateOrder(order.copyWith(calledAt: DateTime.now()));
   }
 
-  /// Naročilo za dostavo gre v kombi → prestavi se v zavihek Dostave.
+  /// Naročilo za dostavo gre v kombi → prestavi se v zavihek Dostave, na konec
+  /// ročnega vrstnega reda.
   void sendToVan(String orderId) {
     final order = state.order(orderId);
     if (order == null || order.status != OrderStatus.awaitingDelivery) return;
     if (order.inVanAt != null) return;
-    updateOrder(order.copyWith(inVanAt: DateTime.now()));
+    final ranks = [
+      for (final o in state.orders)
+        if (o.isInVan && o.vanOrder != null) o.vanOrder!,
+    ];
+    final next = ranks.isEmpty ? 0 : ranks.reduce((a, b) => a > b ? a : b) + 1;
+    updateOrder(order.copyWith(inVanAt: DateTime.now(), vanOrder: next));
+  }
+
+  /// Ročni vrstni red v Dostavah (V10 §3). [orderedIds] so naročila, kot jih
+  /// vidi uporabnik, v novem vrstnem redu — pri filtriranem seznamu (npr. samo
+  /// MB) je to podmnožica. Zasedejo natanko tista mesta v celotnem vrstnem
+  /// redu, ki so jih imela prej, zato ostalih regij ne premešajo.
+  void reorderVan(List<String> orderedIds) {
+    final all = sortedForVan(state.orders.where((o) => o.isInVan))
+        .map((o) => o.id)
+        .toList();
+    final moved = orderedIds.where(all.contains).toList();
+    final slots = [
+      for (var i = 0; i < all.length; i++)
+        if (moved.contains(all[i])) i,
+    ];
+    if (slots.length != moved.length) return;
+    final merged = [...all];
+    for (var k = 0; k < moved.length; k++) {
+      merged[slots[k]] = moved[k];
+    }
+    final rank = {for (var i = 0; i < merged.length; i++) merged[i]: i};
+    final orders = [
+      for (final o in state.orders)
+        rank.containsKey(o.id) ? o.copyWith(vanOrder: rank[o.id]) : o,
+    ];
+    _commit(state.copyWith(orders: orders));
   }
 
   /// Undo: naročilo ni šlo v kombi — nazaj v Pripravljeno.

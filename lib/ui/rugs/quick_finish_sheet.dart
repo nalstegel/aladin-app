@@ -14,16 +14,18 @@ import '../widgets/extra_choice.dart';
 
 /// Hitre mere. Prve tri so gumbi za površino (v3 spec §4: "1 m²", "2 m²",
 /// "3 m²") za steze / tekoče metre — širina×dolžina je tam le interna
-/// predstavitev. Ostale so standardne mere preprog (QA v4 §4). "Drugo" ostane
-/// edina pot za ročni vnos dejanskih mer kosa.
+/// predstavitev. Ostale so standardne mere preprog (QA v4 §4, V10 §1). "Drugo"
+/// ostane edina pot za ročni vnos dejanskih mer kosa.
 const _quickSizes = [
   (label: '1 m²', widthCm: 100.0, lengthCm: 100.0),
   (label: '2 m²', widthCm: 100.0, lengthCm: 200.0),
   (label: '3 m²', widthCm: 100.0, lengthCm: 300.0),
   (label: '1,2 × 1,7', widthCm: 120.0, lengthCm: 170.0),
+  (label: '1,35 × 1,95', widthCm: 135.0, lengthCm: 195.0),
   (label: '2,3 × 1,7', widthCm: 230.0, lengthCm: 170.0),
   (label: '3 × 2', widthCm: 300.0, lengthCm: 200.0),
   (label: '3,5 × 2,5', widthCm: 350.0, lengthCm: 250.0),
+  (label: '4 × 3', widthCm: 400.0, lengthCm: 300.0),
 ];
 const _areaSizeCount = 3;
 
@@ -126,11 +128,11 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
-    final types = state.rugTypes.where((t) => t.active).toList();
+    final types = sortedRugTypes(state.rugTypes.where((t) => t.active));
     // Vnos / Iznos sta informacija prevzema (V8 §2) — ne na tem zaslonu.
-    final templates = state.extraTemplates
-        .where((t) => t.active && !t.isOrderLevel)
-        .toList();
+    final templates = sortedQuickExtras(
+      state.extraTemplates.where((t) => t.active && !t.isOrderLevel),
+    );
     final type = _typeId == null ? null : state.rugType(_typeId!);
 
     final chosen = [
@@ -230,7 +232,7 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
               style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
             ),
             const SectionHeader('Doplačila'),
-            _extrasGrid(templates, preview),
+            _extrasGrid(templates),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -471,42 +473,39 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
     );
   }
 
-  Widget _extrasGrid(List<ExtraTemplate> templates, RugItem preview) {
-    return _grid(
-      columns: 2,
-      aspectRatio: 4.2,
-      children: [
-        for (final t in templates)
-          _choiceButton(
-            label: _selected.containsKey(t.id) && t.hasChoices
-                ? '${t.name} · ${formatExtraValue(_selected[t.id]!, t)}'
-                : t.name,
-            selected: _selected.containsKey(t.id),
-            onTap: () => _toggleExtra(t),
-          ),
-      ],
-    );
-  }
+  /// Ena tipka na doplačilo, z zneskom na tipki: "Urin +3 €/m²", "Dlake +5 €",
+  /// "Dlake +10 €", "Ponovno pranje +30 %" (V10 §1). Postavka z izbiro
+  /// (Dlake) dobi tipko za vsak znesek — ena sama tapnitev, brez izbirnika;
+  /// druga tipka iste postavke zamenja prvo, ponovni dotik izbiro odstrani.
+  Widget _extrasGrid(List<ExtraTemplate> templates) {
+    String label(ExtraTemplate t, double v) =>
+        '${t.name} ${v < 0 ? '−' : '+'}${formatExtraValue(v, t)}';
 
-  Future<void> _toggleExtra(ExtraTemplate t) async {
-    if (!t.hasChoices) {
-      setState(
-        () => _selected.containsKey(t.id)
-            ? _selected.remove(t.id)
-            : _selected[t.id] = t.value,
-      );
-      return;
-    }
-    // Postavka z izbiro (npr. Dlake 5 € / 10 €): delavec izbere znesek.
-    final picked = await pickExtraChoice(context, t, current: _selected[t.id]);
-    if (picked == null || !mounted) return;
-    setState(() {
-      if (picked == 0) {
-        _selected.remove(t.id);
-      } else {
-        _selected[t.id] = picked;
-      }
-    });
+    final tiles = <Widget>[
+      for (final t in templates)
+        if (t.hasChoices)
+          for (final c in t.choices)
+            _choiceButton(
+              label: label(t, c),
+              selected: _selected[t.id] == c,
+              onTap: () => setState(
+                () => _selected[t.id] == c
+                    ? _selected.remove(t.id)
+                    : _selected[t.id] = c,
+              ),
+            )
+        else
+          _choiceButton(
+            label: label(t, t.value),
+            selected: _selected.containsKey(t.id),
+            onTap: () => setState(
+              () => _selected.containsKey(t.id)
+                  ? _selected.remove(t.id)
+                  : _selected[t.id] = t.value,
+            ),
+          ),
+    ];
+    return _grid(columns: 2, aspectRatio: 4.2, children: tiles);
   }
 
   Widget _choiceButton({
@@ -529,15 +528,17 @@ class _QuickFinishSheetState extends ConsumerState<QuickFinishSheet> {
               color: selected ? AppColors.primary : AppColors.border,
             ),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: selected ? AppColors.primary : AppColors.text,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: selected ? AppColors.primary : AppColors.text,
+              ),
             ),
           ),
         ),

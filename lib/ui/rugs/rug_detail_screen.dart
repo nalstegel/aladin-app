@@ -165,7 +165,7 @@ class RugDetailScreen extends ConsumerWidget {
                 ? TextButton.icon(
                     onPressed: () => EditPricingSheet.show(context, item),
                     icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Uredi'),
+                    label: const Text('Uredi mere in ceno'),
                   )
                 : null,
           ),

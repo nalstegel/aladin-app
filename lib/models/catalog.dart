@@ -186,3 +186,47 @@ const fallbackItemExtras = [
     choices: [5, 10],
   ),
 ];
+
+/// Vrstni red vrst preprog v Hitrem obračunu (V10 §1): Sintetika / tanki
+/// tepihi, Shaggy / kosmati, Volna, Perzija / ročno vozlana.
+///
+/// Šifrant v bazi ureja lastnik in nima polja za vrstni red, zato se vrste
+/// razvrstijo po imenu; neznane ostanejo na koncu v vrstnem redu iz šifranta.
+List<RugType> sortedRugTypes(Iterable<RugType> types) {
+  int rank(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('sintet')) return 0;
+    if (n.contains('shaggy') || n.contains('kosmat')) return 1;
+    if (n.contains('voln')) return 2;
+    if (n.contains('perzij') || n.contains('vozlan')) return 3;
+    return 4;
+  }
+
+  final list = types.toList();
+  final order = {for (var i = 0; i < list.length; i++) list[i].id: i};
+  list.sort((a, b) {
+    final c = rank(a.name).compareTo(rank(b.name));
+    return c != 0 ? c : order[a.id]!.compareTo(order[b.id]!);
+  });
+  return list;
+}
+
+/// Vrstni red doplačil v Hitrem obračunu (V10 §1): Urin, Dlake, Ponovno
+/// pranje; ostala doplačila in popusti za njimi.
+List<ExtraTemplate> sortedQuickExtras(Iterable<ExtraTemplate> templates) {
+  int rank(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('urin')) return 0;
+    if (n.contains('dlak')) return 1;
+    if (n.contains('pranje')) return 2;
+    return 3;
+  }
+
+  final list = templates.toList();
+  final order = {for (var i = 0; i < list.length; i++) list[i].id: i};
+  list.sort((a, b) {
+    final c = rank(a.name).compareTo(rank(b.name));
+    return c != 0 ? c : order[a.id]!.compareTo(order[b.id]!);
+  });
+  return list;
+}

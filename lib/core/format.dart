@@ -60,17 +60,33 @@ class Fmt {
     return '${m(wCm)} × ${m(lCm)} m';
   }
 
-  /// "1 kos", "2 kosa", "3 kosi", "5 kosov"
-  static String pieces(int n) {
+  /// Slovenska množina: 0 = ednina (1, 21, …), 1 = dvojina (2, 22, …),
+  /// 2 = množina za 3 in 4, 3 = ostalo. Zadnja števka odloča, razen pri 11–14
+  /// (11 kosov, ne "11 kos").
+  static int pluralForm(int n) {
     final mod100 = n % 100;
     final mod10 = n % 10;
-    if (mod100 == 1 || (mod10 == 1 && mod100 != 11)) return '$n kos';
-    if (mod100 == 2 || (mod10 == 2 && mod100 != 12)) return '$n kosa';
-    if (mod10 == 3 || mod10 == 4) {
-      if (mod100 != 13 && mod100 != 14) return '$n kosi';
-    }
-    return '$n kosov';
+    if (mod100 == 1 || (mod10 == 1 && mod100 != 11)) return 0;
+    if (mod100 == 2 || (mod10 == 2 && mod100 != 12)) return 1;
+    if ((mod10 == 3 || mod10 == 4) && mod100 != 13 && mod100 != 14) return 2;
+    return 3;
   }
+
+  static String _plural(
+    int n,
+    String one,
+    String two,
+    String few,
+    String many,
+  ) => '$n ${[one, two, few, many][pluralForm(n)]}';
+
+  /// "1 kos", "2 kosa", "3 kosi", "5 kosov"
+  static String pieces(int n) => _plural(n, 'kos', 'kosa', 'kosi', 'kosov');
+
+  /// "1 naročilo", "2 naročili", "3 naročila", "5 naročil" — za števce, ki
+  /// štejejo naročila (in ne kosov), da enota ni nikoli skrita (V10 §5).
+  static String orders(int n) =>
+      _plural(n, 'naročilo', 'naročili', 'naročila', 'naročil');
 
   /// "031353517" → "031 353 517", "+38631353517" → "+386 31 353 517".
   /// Vse, kar ni prepoznana slovenska številka, ostane kot je bilo vpisano.

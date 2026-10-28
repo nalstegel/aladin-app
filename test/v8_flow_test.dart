@@ -13,14 +13,14 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late Repository repo;
   late Customer customer;
-  late RugType type; // Navadna / sintetika: 12 €/m², minimum 3 m² → 36 €
+  late RugType type; // Sintetika / tanki tepihi: 12 €/m², minimum 3 m² → 36 €
 
   setUp(() async {
     repo = Repository(InMemoryStore());
     await repo.init();
     repo.setCurrentUser('u-marko');
     customer = repo.state.customers.first;
-    type = repo.state.rugTypes.firstWhere((t) => t.name == 'Navadna / sintetika');
+    type = repo.state.rugTypes.firstWhere((t) => t.name == 'Sintetika / tanki tepihi');
   });
 
   WorkOrder create({

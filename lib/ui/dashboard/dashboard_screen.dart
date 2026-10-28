@@ -130,6 +130,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           _LinkRow(
                             label: p.label,
                             value: counts[p] ?? 0,
+                            // Čaka pranje / Sušenje štejeta kose, ostalo
+                            // naročila — enota je vedno izpisana (V10 §5).
+                            valueText: p.showsItems
+                                ? Fmt.pieces(counts[p] ?? 0)
+                                : Fmt.orders(counts[p] ?? 0),
                             onTap: () => openOrdersPhase(ref, p),
                           ),
                       ],
@@ -153,6 +158,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 _LinkRow(
                                   label: 'Prevzem zamuja',
                                   value: action.pickupLate.length,
+                                  valueText: Fmt.orders(action.pickupLate.length),
                                   valueColor: AppColors.danger,
                                   onTap: () =>
                                       openOrdersPhase(ref, OrderPhase.intake),
@@ -161,6 +167,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 _LinkRow(
                                   label: 'Ni klicano (osebni prevzem)',
                                   value: action.notCalled.length,
+                                  valueText: Fmt.orders(action.notCalled.length),
                                   onTap: () =>
                                       openOrdersPhase(ref, OrderPhase.ready),
                                 ),
@@ -168,6 +175,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 _LinkRow(
                                   label: 'Kosi v "Mere in cena"',
                                   value: action.stuckItems.length,
+                                  valueText: Fmt.pieces(action.stuckItems.length),
                                   onTap: () =>
                                       openOrdersPhase(ref, OrderPhase.drying),
                                 ),
@@ -365,12 +373,16 @@ class _LinkRow extends StatelessWidget {
     required this.value,
     required this.onTap,
     this.valueColor,
+    this.valueText,
   });
 
   final String label;
   final int value;
   final VoidCallback onTap;
   final Color? valueColor;
+
+  /// Število z enoto ("46 naročil"); brez tega se izpiše samo število.
+  final String? valueText;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -382,7 +394,7 @@ class _LinkRow extends StatelessWidget {
         children: [
           Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
           Text(
-            '$value',
+            valueText ?? '$value',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,

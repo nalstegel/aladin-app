@@ -41,8 +41,9 @@ void main() {
         itemCount: items,
       );
 
-  RugType type(String name) =>
-      repo.state.rugTypes.firstWhere((t) => t.name == name);
+  /// Vrsta po začetku imena ("Perzij" → "Perzija / ročno vozlana").
+  RugType type(String prefix) =>
+      repo.state.rugTypes.firstWhere((t) => t.name.startsWith(prefix));
 
   /// Obračunan kos: Volna 200 × 300 cm = 6 m² × 15 € = 90 €.
   RugItem priced(WorkOrder order, int n, {double? price}) {
@@ -156,7 +157,7 @@ void main() {
         item.id,
         widthCm: 200,
         lengthCm: 300,
-        rugType: type('Perzijska / ročno vozlana'),
+        rugType: type('Perzij'),
         extras: const [
           AppliedExtra(
             name: 'Ponovno pranje',
@@ -169,7 +170,7 @@ void main() {
       );
 
       final edited = repo.state.item(item.id)!;
-      expect(edited.rugTypeName, 'Perzijska / ročno vozlana');
+      expect(edited.rugTypeName, type('Perzij').name);
       expect(edited.pricePerM2, 22);
       expect(edited.computedPrice, 154.44);
       expect(edited.price, 154.44);
@@ -448,8 +449,8 @@ void main() {
             .controller!
             .text, '90.00');
 
-        await tester.tap(find.text('Perzijska / ročno vozlana'));
-        await tester.tap(find.text('Ponovno pranje'));
+        await tester.tap(find.text(type('Perzij').name));
+        await tester.tap(find.text('Ponovno pranje +30 %'));
         await tester.enterText(discountField(), '10');
         await tester.pump();
 
@@ -462,7 +463,7 @@ void main() {
         await tester.pumpAndSettle();
 
         final edited = repo.state.item(item.id)!;
-        expect(edited.rugTypeName, 'Perzijska / ročno vozlana');
+        expect(edited.rugTypeName, type('Perzij').name);
         expect(edited.extras.map((e) => e.name), ['Ponovno pranje']);
         expect(edited.discountPercent, 10);
         expect(edited.price, 154.44);
@@ -475,13 +476,47 @@ void main() {
         final item = priced(order, 1, price: 100);
         await show(tester, Scaffold(body: EditPricingSheet(item: item)));
 
-        await tester.tap(find.text('Perzijska / ročno vozlana'));
+        await tester.tap(find.text(type('Perzij').name));
         await tester.pump();
 
         expect(
           tester.widget<TextField>(priceField()).controller!.text,
           '100.00',
         );
+      });
+
+      testWidgets(
+          'Dlake: tipka za vsak znesek, druga zamenja prvo, ponovni dotik '
+          'odstrani', (tester) async {
+        final order = newOrder();
+        final item = priced(order, 1);
+        await show(tester, Scaffold(body: EditPricingSheet(item: item)));
+        double shownPrice() => double.parse(
+              tester.widget<TextField>(priceField()).controller!.text,
+            );
+
+        expect(find.text('Dlake +5 €'), findsOneWidget);
+        expect(find.text('Dlake +10 €'), findsOneWidget);
+
+        await tester.tap(find.text('Dlake +5 €'));
+        await tester.pump();
+        expect(shownPrice(), 95);
+
+        await tester.tap(find.text('Dlake +10 €'));
+        await tester.pump();
+        expect(shownPrice(), 100);
+
+        await tester.tap(find.text('Dlake +10 €'));
+        await tester.pump();
+        expect(shownPrice(), 90);
+
+        await tester.tap(find.text('Dlake +5 €'));
+        await tester.pump();
+        await tester.tap(find.textContaining('Shrani'));
+        await tester.pumpAndSettle();
+        final edited = repo.state.item(item.id)!;
+        expect(edited.extras.map((e) => '${e.name} ${e.value}'), ['Dlake 5.0']);
+        expect(edited.price, 95);
       });
 
       testWidgets(
@@ -520,7 +555,7 @@ void main() {
         final current = repo.state.item(item.id)!;
         await show(tester, Scaffold(body: EditPricingSheet(item: current)));
 
-        expect(find.text('Posebno čiščenje'), findsOneWidget);
+        expect(find.text('Posebno čiščenje +12 €'), findsOneWidget);
         await tester.enterText(discountField(), '10');
         await tester.pump();
         await tester.tap(find.textContaining('Shrani'));

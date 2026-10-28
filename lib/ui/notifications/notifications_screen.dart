@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/alerts.dart';
-import '../orders/order_detail_screen.dart';
+import '../../data/navigation.dart';
 import '../widgets/common.dart';
 
 export '../../data/alerts.dart' show unreadAlertCountProvider;
@@ -49,7 +49,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ? const EmptyState(
               icon: Icons.notifications_none,
               title: 'Ni obvestil',
-              message: 'Tu se pojavijo pripravljena naročila.',
+              message:
+                  'Tu se pojavijo opomniki: nepoklicana naročila, kombi po '
+                  'koncu delovnika in dnevni povzetek.',
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -59,19 +61,26 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 final a = alerts[i];
                 const color = AppColors.ready;
                 final unread = _unreadOnOpen.contains(a.id);
+                final phase = a.phase;
 
                 return AppCard(
                   accent: color,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => OrderDetailScreen(orderId: a.orderId),
-                    ),
-                  ),
+                  // Obvestilo je združeno, zato odpre zavihek, ne enega
+                  // naročila.
+                  onTap: phase == null
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          openOrdersPhase(ref, phase);
+                        },
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.check_circle_outline,
+                      Icon(
+                        switch (a.kind) {
+                          AlertKind.uncalled => Icons.phone_missed_outlined,
+                          AlertKind.vanLeft => Icons.local_shipping_outlined,
+                          AlertKind.daySummary => Icons.today_outlined,
+                        },
                         size: 20,
                         color: color,
                       ),

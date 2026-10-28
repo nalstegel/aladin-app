@@ -100,7 +100,7 @@ void main() {
     repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     // Navadna: 12 €/m², minimalni obračun 3 m².
-    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Navadna / sintetika');
+    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Sintetika / tanki tepihi');
 
     repo.advance(id);
     repo.setMeasurements(id, widthCm: 100, lengthCm: 100, rugType: type);

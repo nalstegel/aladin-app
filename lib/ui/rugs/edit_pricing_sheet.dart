@@ -77,7 +77,8 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
     ];
     final known = {for (final t in catalog) t.name};
     _templates = [
-      ...catalog,
+      // Enak vrstni red kot v Hitrem obračunu.
+      ...sortedQuickExtras(catalog),
       for (final e in item.extras)
         if (!known.contains(e.name))
           ExtraTemplate(
@@ -168,38 +169,60 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
     _price.text = _preview().computedPrice.toStringAsFixed(2);
   }
 
-  Future<void> _toggleExtra(ExtraTemplate t) async {
-    if (!t.hasChoices) {
-      setState(() {
-        if (_selected.remove(t.name) == null) {
-          _selected[t.name] = AppliedExtra.fromTemplate(t);
-        }
-        _syncPrice();
-      });
-      return;
-    }
-    // Postavka z izbiro (npr. Dlake 5 € / 10 €): delavec izbere znesek.
-    final picked = await pickExtraChoice(
-      context,
-      t,
-      current: _selected[t.name]?.value,
-    );
-    if (picked == null || !mounted) return;
+  /// Dotik doplačila z zneskom [value]. Postavka z izbiro (Dlake 5 € / 10 €)
+  /// ima tipko za vsak znesek: druga tipka iste postavke zamenja prvo, ponovni
+  /// dotik izbiro odstrani — enako kot v Hitrem obračunu.
+  void _tapExtra(ExtraTemplate t, double value) {
     setState(() {
-      if (picked == 0) {
+      final current = _selected[t.name];
+      if (t.hasChoices) {
+        if (current?.value == value) {
+          _selected.remove(t.name);
+        } else {
+          _selected[t.name] = AppliedExtra.fromTemplate(t, value: value);
+        }
+      } else if (current != null) {
         _selected.remove(t.name);
       } else {
-        _selected[t.name] = AppliedExtra.fromTemplate(t, value: picked);
+        _selected[t.name] = AppliedExtra.fromTemplate(t);
       }
       _syncPrice();
     });
   }
 
-  String _extraLabel(ExtraTemplate t) {
-    final applied = _selected[t.name];
-    return applied != null && t.hasChoices
-        ? '${t.name} · ${formatExtraValue(applied.value, t)}'
-        : t.name;
+  /// Ena tipka na doplačilo, z zneskom na tipki: "Urin +3 €/m²", "Dlake +5 €",
+  /// "Dlake +10 €". Zapisano doplačilo ohrani svoj znesek in vrsto tudi na
+  /// tipki, če se je šifrant medtem spremenil.
+  List<Widget> _extraTiles() {
+    String label(ExtraTemplate t, double v) =>
+        '${t.name} ${v < 0 ? '−' : '+'}${formatExtraValue(v, t)}';
+
+    return [
+      for (final t in _templates)
+        if (t.hasChoices)
+          // Zapisan znesek, ki ga izbira ne pozna več, ostane viden in ga je
+          // mogoče odstraniti.
+          for (final c in {
+            ...t.choices,
+            if (_selected[t.name] != null) _selected[t.name]!.value,
+          })
+            ChoiceTile(
+              label: label(t, c),
+              selected: _selected[t.name]?.value == c,
+              onTap: () => _tapExtra(t, c),
+            )
+        else
+          ChoiceTile(
+            label: label(
+              _selected[t.name] == null
+                  ? t
+                  : t.copyWith(kind: _selected[t.name]!.kind),
+              _selected[t.name]?.value ?? t.value,
+            ),
+            selected: _selected.containsKey(t.name),
+            onTap: () => _tapExtra(t, t.value),
+          ),
+    ];
   }
 
   void _save(RugType type, double price) {
@@ -220,12 +243,13 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final item = widget.item;
-    final types = [
+    final own = _ownType;
+    final types = sortedRugTypes([
       for (final t in state.rugTypes)
         if (t.active || t.id == item.rugTypeId) t,
-    ];
-    final own = _ownType;
-    if (own != null && !types.any((t) => t.id == own.id)) types.insert(0, own);
+      // Vrsta, ki je šifrant ne pozna več, ostane izbrana na kosu.
+      if (own != null && state.rugType(own.id) == null) own,
+    ]);
 
     final type = _type;
     final area = _m2;
@@ -304,14 +328,7 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
             ),
             if (_templates.isNotEmpty) ...[
               const SectionHeader('Doplačila'),
-              _grid([
-                for (final t in _templates)
-                  ChoiceTile(
-                    label: _extraLabel(t),
-                    selected: _selected.containsKey(t.name),
-                    onTap: () => _toggleExtra(t),
-                  ),
-              ]),
+              _grid(_extraTiles()),
             ],
             const SizedBox(height: 10),
             Row(

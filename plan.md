@@ -815,8 +815,8 @@ Pripravljeno → Dostave → Predaja / podpis.
 - ✔ **V kombi** je zastavica `WorkOrder.inVanAt` (ne status): `_recompute` jo (in
   `calledAt`) počisti, ko naročilo ni več pripravljeno za predajo. **Dostave** =
   samo `isInVan`; filtri Vse/LJ/MB/CE/DOL, telefon = klic, naslov = Maps,
-  **Odpri pot** (Google Maps, do 10 postankov iz trenutno filtriranega
-  seznama), Vrni (ReturnFlow) in Iz kombija (undo).
+  ~~**Odpri pot**~~ (odstranjeno v V10 §4.12), Vrni (ReturnFlow) in Iz kombija
+  (undo).
 - **Brez "Zamuja":** odstranjeno z OrderCard, Home in iz zvonca (`AlertKind`
   ima samo `readyForHandover`). Rdeče je samo še zamujen naš prevzem.
 - **Skeniranje:** hitri način je privzeto vklopljen; premik ima haptic +
@@ -851,9 +851,107 @@ minimum, V kombi/Dostave, Klicano, Undo), `test/zpl_test.dart` prepisan.
 **Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
 `flutter analyze` + testi, ne pa vizualno.
 
+### 4.12 — Post-live QA V10 (PDF "ALADIN_APP_POST_LIVE_QA_V10_FINAL") — DONE v kodi (2026-10-22)
+Veja `fix/post-live-qa-v10` (iz `development`). Core flow ostane nespremenjen:
+brez novih statusov in brez dodatnih korakov. Odločitve, ki jih PDF ne določa in
+sem jih izbral sam, so označene z ⚑ — preveri jih.
+
+**P1**
+- **Klicano iz vseh vstopnih točk.** Vsak klic gre skozi
+  `ui/orders/call_customer.dart` (`callCustomer`): zabeleži `calledAt` in šele
+  nato odpre klicalnik. Uporabljajo ga seznam Pripravljeno, telefon na podrobnostih
+  naročila in telefon na kartici v Dostavah. `Repository.markCalled` sam preveri
+  `status == awaitingCollection` (pri naročilu v proizvodnji bi ga `_recompute`
+  tako ali tako pobrisal). **Nov vstopni kanal za klic mora uporabiti
+  `callCustomer`, ne `callPhone`.**
+- **Direktno urejanje.** Podrobnosti kosa: „Uredi mere in ceno“
+  (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`): vrsta,
+  širina/dolžina (ali m² pri ročnem vnosu), doplačila, popust (oboje dodano v
+  §4.13) in končna cena; status se ne
+  spremeni, površina/osnova/obračun naročila se izpeljejo sami. Cena sledi
+  izračunu, dokler je ne spremeniš sam; že prej ročno določena cena se ob
+  popravku mer ne povozi tiho (ponudi se „Uporabi izračun“). Podrobnosti
+  naročila: „Uredi“ pri Podatkih (`ui/orders/edit_customer_sheet.dart`): ime /
+  podjetje (+ kontaktna oseba pri podjetju), telefon, naslov. ⚑ Popravek
+  gre skozi `Repository.updateCustomer`, torej velja za stranko in vsa njena
+  naročila (že obstoječe obnašanje: podvojeni podatki na naročilih se uskladijo).
+  „Zamenjaj stranko“ (Uredi naročilo) je samo še prava menjava.
+- **Hitri obračun.** Vrste: Sintetika, Shaggy, Volna, Perzija (`sortedRugTypes`
+  v `models/catalog.dart`; šifrant v Firestoreju nima vrstnega reda, zato se
+  razvrsti po imenu — neznane vrste na konec). Mere: 1/2/3 m², Drugo, 1,2×1,7,
+  1,35×1,95, 2,3×1,7, 3×2, 3,5×2,5, 4×3. Doplačila so ena tipka na znesek:
+  „Urin +3 €/m²“, „Dlake +5 €“, „Dlake +10 €“, „Ponovno pranje +30 %“
+  (`sortedQuickExtras`); izbirnik za Dlake je odpravljen. Vnos/Iznos ostajata
+  samo na prevzemu. Seed je preimenovan (Sintetika / tanki tepihi, Shaggy /
+  kosmati-debelejši, Volna, Perzija / ročno vozlana). **Šifrant v Firestoreju se
+  ne spremeni sam** — imena, ki jih lastnik že ima, delujejo (razvrščanje je po
+  ključnih besedah), vendar preimenovanje v Več naredi lastnik.
+
+**P2**
+- **Pripravljeno.** Filtri Vse / LJ / MB / CE / DOL (`RegionFilterBar`, regije
+  iz `OrderLocation.values`, zato nova regija dobi filter sama; manjši
+  `FilterPill(dense)`), nato zložljive sekcije Za dostavo → Ni klicano →
+  Klicano · čaka stranko s številom; prazna sekcija je skrita. ⚑ Vse sekcije so
+  privzeto ZAPRTE (kot bloki na Danes); stanje drži `readyOpenSectionsProvider`,
+  da ostane ob menjavi zavihka. Če želiš odprto Ni klicano, spremeni privzeto
+  vrednost tega providerja.
+- **Dostave.** „Odpri pot“ je odstranjen (gumb in `openMapsRoute`). Ročni
+  vrstni red: ročaj ali dolg pritisk na kartici, `ReorderableListView`. ⚑ Shranjen je
+  v bazi kot `WorkOrder.vanOrder` (ne na napravi), torej ga vidijo vsi telefoni in
+  preživi ponovni zagon. `Repository.sendToVan` doda naročilo na konec,
+  `removeFromVan` ga počisti, `reorderVan` pri filtriranem seznamu (npr. samo
+  MB) premakne samo prikazana naročila na njihova prejšnja mesta. Razvrščanje:
+  `sortedForVan` v `order_phases.dart` (naročila brez številke so pred urejenimi).
+- **Skener: Google ocena.** Gumb „Natisni Google oceno“ med pripomočki
+  (`buildReviewZpl`): generična nalepka brez podatkov stranke — „Hvala za
+  zaupanje! Ste zadovoljni? Ocenite nas na Googlu“ + velik QR. ⚑ **Povezave nihče
+  ni sporočil**, zato je `googleReviewUrl` v `lib/core/review.dart` PRAZEN in
+  gumb pove „Povezava za Google oceno še ni nastavljena.“ — vpiši jo (ena
+  konstanta) in je v redu. Velikost QR-ja se prilagodi dolžini povezave.
+
+**Mali QA fixi**
+- Snackbar z Razveljavi je izginjal prepočasi, ker Flutterjev `SnackBar` z
+  akcijo privzeto sploh ne izgine (`persist` = true). Vsi taki gredo zdaj skozi
+  `showUndoSnackBar` (`ui/widgets/undo_snackbar.dart`): 5 s, `persist: false`.
+  **Nov SnackBar z akcijo mora uporabiti ta helper.**
+- Enote števcev: Čaka pranje / Sušenje / skener štejejo kose, ostalo naročila.
+  Zavihki imajo podnapis (`UnitCaption`: „46 naročil“ / „68 kosov“), skener in
+  Danes izpišeta enoto ob številki (`Fmt.pieces`, novi `Fmt.orders`).
+- Območje ostane zaklenjeno po ustvarjanju naročila (brez spremembe).
+
+**Obvestila (zvonec, `data/alerts.dart`)** — samo tri, vsako ena združena
+vrstica: po 24 h „3 pripravljena naročila še niso klicana.“; po koncu delovnika
+„2 naročili sta še v kombiju.“; dnevni povzetek „Danes: 6 prevzemov, 4 dostave.“
+⚑ Konec delovnika je konstanta `workdayEndHour = 17` — PDF ure ne navaja.
+⚑ Prejšnja obvestila „LJ-001 je pripravljeno“ (ena na naročilo) so odstranjena,
+ker jih PDF prepoveduje („ne ena na stranko“, „brez notification spama“). Obvestila
+so še vedno samo v aplikaciji (push je še vedno nedelujoč, glej §4.1);
+`alertsProvider` se osvežuje vsako minuto, ker so odvisna od časa.
+
+**Etikete po predlogi** (`lib/core/zpl.dart`, `LabelLayout` + predogled): vse na
+sredini, QR (mag. 7) zgoraj na sredini, pod njim velika vrstica in manjša:
+Pripeljano = „Remec  2/4“ + telefon; LJ dostava = „LJ-021  3/4“ + ime;
+regije = „MB-001  2/4“ + ime. Predpona ID-ja naročila je že regija, zato
+`regionCode` ni več parameter in posebne oznake regije ni. Velikost velike
+vrstice se prilagodi širini (66 → 34), predolgo ime se skrajša, x/y ostane cel.
+⚑ ID naročila je natisnjen s polnimi ničlami („LJ-021“, ne „LJ-21“ kot na skici),
+da je enak kot povsod v aplikaciji. ⚑ Majhen ID kosa ni več natisnjen (skica ga
+nima) — za ročni vnos zadošča „LJ-021  3/4“ → `LJ-021-3`. **Še ni natisnjeno na
+pravem ZD230** (geometrija je izračunana iz ocene širine pisave 0,57 × višina).
+
+**Testi:** `test/v10_test.dart` (Klicano, urejanje po obračunu, vrstni red
+Dostav, vrstni red Hitrega obračuna, množina, obvestila),
+`test/v10_widgets_test.dart` (Pripravljeno, Dostave z vlečenjem, klic in urejanje
+na podrobnostih, snackbar), `test/zpl_test.dart` prepisan. `flutter analyze`
+čist. **Ni preverjeno na napravi** (lastnik preverja ročno): vizualno (razmik,
+velikost tipk, občutek vlečenja) ni preverjeno.
+
 ### 4.13 — Brisanje naročil, urejanje kosov, Hiter vnos vedno odprt — DONE v kodi (2026-10-26)
-Veja `feature/delete-and-edit-orders`, namenoma iz `development` (brez V10 z
-veje `fix/post-live-qa-v10`). ⚑ = odločitev, ki je ni podal lastnik.
+Veja `feature/delete-and-edit-orders` (v `development` s PR #12) je bila namenoma
+narejena iz `development` brez V10. 2026-10-28 je bil `development` združen v
+`fix/post-live-qa-v10`; ker sta obe veji dodali `EditPricingSheet` /
+`editItemPricing`, velja ena različica — spodaj opisana, ki je nadmnožica V10 §1.
+⚑ = odločitev, ki je ni podal lastnik.
 
 - **Izbris naročila.** Koš v glavi podrobnosti naročila → potrditev → vrne na
   prvi zaslon (`Repository.deleteOrder`). ⚑ Briše se samo **odprto** naročilo:
@@ -869,7 +967,10 @@ veje `fix/post-live-qa-v10`). ⚑ = odločitev, ki je ni podal lastnik.
 - **Uredi kos** (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`):
   vrsta, mere (ali m² pri ročnem vnosu), doplačila, popust in končna cena že
   obračunanega kosa; status se ne spremeni. Dostop: ⋮ ob kosu na podrobnostih
-  naročila ali „Uredi“ v bloku Mere in cena na kosu. Pravila: cena sledi
+  naročila ali „Uredi mere in ceno“ v bloku Mere in cena na kosu. Vrste in
+  doplačila so urejena kot v Hitrem obračunu (`sortedRugTypes`,
+  `sortedQuickExtras`), doplačila z izbiro pa imajo tipko za vsak znesek
+  („Dlake +5 €“ / „Dlake +10 €“). Pravila: cena sledi
   izračunu, dokler je ne spremeniš sam (ročno določena se ne povozi); vrsta, ki
   je ne spremeniš, obdrži ceno na m², zapisano na kosu (sicer bi popravek tiho
   prečenil kos po današnjem ceniku); doplačilo, ki ga šifrant ne pozna več, ostane.
@@ -882,11 +983,10 @@ veje `fix/post-live-qa-v10`). ⚑ = odločitev, ki je ni podal lastnik.
   `PickupSheet`.
 - **Hiter vnos** na Danes je vedno odprt (brez zložljive glave); štirje bloki pod
   njim ostanejo zaprti.
-- ⚑ Imena `EditPricingSheet` / `editItemPricing` so enaka kot v V10
-  (`fix/post-live-qa-v10`), ker sta tam že zasedena z ožjo različico (vrsta, mere,
-  cena). Ob združitvi obdrži to različico — je nadmnožica (podpisi so združljivi,
-  ker sta `extras` in `discountPercent` neobvezna).
-- **Testi:** `test/delete_and_edit_test.dart` (24 testov: repozitorij + zasloni).
+- ⚑ Zgodovina kosa po popravku našteje spremenjeno („Popravljeno (vrsta, cena)“);
+  V10 je zapisal vedno „Mere in cena popravljene“. `test/v10_test.dart` je
+  prilagojen.
+- **Testi:** `test/delete_and_edit_test.dart` (25 testov: repozitorij + zasloni).
   **Ni preverjeno na napravi:** vizualno (velikost mrežnih gumbov v sheetu,
   meni ⋮ na ozkih telefonih) ni preverjeno.
 

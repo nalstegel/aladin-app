@@ -7,7 +7,6 @@ import '../../core/theme.dart';
 import '../../core/zpl.dart';
 import '../../data/providers.dart';
 import '../../data/zebra_printer.dart';
-import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
@@ -73,7 +72,6 @@ class _LabelsScreenState extends ConsumerState<LabelsScreen> {
                 pieceLabel: item.pieceLabel,
                 customerName: order.customerName,
                 phone: Fmt.phone(order.customerPhone),
-                regionCode: order.location.code,
               ))
           .join();
       await ref.read(zebraPrinterServiceProvider).print(zpl);
@@ -315,7 +313,6 @@ class _LabelPreview extends StatelessWidget {
       pieceLabel: item.pieceLabel,
       customerName: order.customerName,
       phone: Fmt.phone(order.customerPhone),
-      regionCode: order.location.code,
     );
 
     TextAlign align(String a) => switch (a) {
@@ -339,10 +336,10 @@ class _LabelPreview extends StatelessWidget {
           child: Stack(
             children: [
               Positioned(
-                left: LabelLayout.qrX.toDouble(),
-                top: LabelLayout.qrY.toDouble(),
-                width: LabelLayout.qrSize.toDouble(),
-                height: LabelLayout.qrSize.toDouble(),
+                left: layout.qrX.toDouble(),
+                top: layout.qrY.toDouble(),
+                width: layout.qrSize.toDouble(),
+                height: layout.qrSize.toDouble(),
                 child: QrImageView(
                   data: layout.qrData,
                   padding: EdgeInsets.zero,

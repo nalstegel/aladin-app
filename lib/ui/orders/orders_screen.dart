@@ -367,17 +367,24 @@ class _IntakeList extends ConsumerWidget {
         'Novo naročilo ustvariš z Hitrim vnosom na zavihku Danes.',
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-      itemCount: list.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => OrderCard(
-        list[i],
-        action: OrderCardAction(
-          label: 'Prevzeto',
-          onPressed: () => startPickup(context, list[i]),
+    return Column(
+      children: [
+        UnitCaption(Fmt.orders(list.length)),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            itemCount: list.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, i) => OrderCard(
+              list[i],
+              action: OrderCardAction(
+                label: 'Prevzeto',
+                onPressed: () => startPickup(context, list[i]),
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -404,11 +411,19 @@ class _ItemGroupList extends ConsumerWidget {
         null,
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-      itemCount: groups.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => _GroupCard(group: groups[i], phase: phase),
+    final pieces = groups.fold<int>(0, (sum, g) => sum + g.items.length);
+    return Column(
+      children: [
+        UnitCaption(Fmt.pieces(pieces)),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            itemCount: groups.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (_, i) => _GroupCard(group: groups[i], phase: phase),
+          ),
+        ),
+      ],
     );
   }
 }
