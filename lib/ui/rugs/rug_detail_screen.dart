@@ -159,7 +159,8 @@ class RugDetailScreen extends ConsumerWidget {
           ],
           SectionHeader(
             'Mere in cena',
-            // Popravek po obračunu brez vračanja kosa v Sušenje (V10 §1).
+            // Popravek vrste, mer, doplačil in cene, ne da bi kos vračali v
+            // Sušenje.
             trailing: item.isMeasured && item.status != RugStatus.returned
                 ? TextButton.icon(
                     onPressed: () => EditPricingSheet.show(context, item),

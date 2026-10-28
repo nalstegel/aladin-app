@@ -119,7 +119,10 @@ void main() {
       expect(item.m2, 6);
       expect(item.basePrice, 96);
       expect(item.price, 99);
-      expect(item.history.last.note, contains('popravljene'));
+      // Zgodovina našteje, kaj se je res spremenilo.
+      expect(item.history.last.note, contains('Popravljeno'));
+      expect(item.history.last.note, contains('vrsta'));
+      expect(item.history.last.note, contains('cena'));
       // Naročilo je še vedno pripravljeno in njegov obračun se je osvežil.
       expect(repo.state.order(order.id)!.status, OrderStatus.awaitingCollection);
       expect(

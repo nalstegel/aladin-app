@@ -10,9 +10,9 @@ import '../../models/rug_item.dart';
 import '../widgets/common.dart';
 import '../widgets/extra_choice.dart';
 
-/// Direktno urejanje po obračunu (V10 §1): vrsta, širina, dolžina in končna
-/// cena že obračunanega kosa — brez vračanja kosa v Sušenje. Shrani takoj
-/// osveži površino, osnovo in skupni obračun naročila (vse se izpelje iz kosa).
+/// Popravek že obračunanega kosa: vrsta, mere, doplačila, popust in končna
+/// cena — brez vračanja kosa v Sušenje. Status ostane, površina, osnova in
+/// obračun naročila se izpeljejo iz kosa, zato se osvežijo sami.
 class EditPricingSheet extends ConsumerStatefulWidget {
   const EditPricingSheet({super.key, required this.item});
 
@@ -35,23 +35,32 @@ class EditPricingSheet extends ConsumerStatefulWidget {
 }
 
 class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
-  late final _width = TextEditingController(
-    text: widget.item.widthCm?.toStringAsFixed(0) ?? '',
+  late final _width = TextEditingController(text: _plain(widget.item.widthCm));
+  late final _length =
+      TextEditingController(text: _plain(widget.item.lengthCm));
+  late final _manualM2 =
+      TextEditingController(text: _plain(widget.item.manualM2));
+  late final _discount = TextEditingController(
+    text: widget.item.discountPercent == 0
+        ? ''
+        : _plain(widget.item.discountPercent),
   );
-  late final _length = TextEditingController(
-    text: widget.item.lengthCm?.toStringAsFixed(0) ?? '',
-  );
-  late final _manualM2 = TextEditingController(
-    text: widget.item.manualM2?.toString().replaceAll('.', ',') ?? '',
-  );
-  late final _price = TextEditingController(
-    text: widget.item.price.toStringAsFixed(2),
-  );
+  late final _price =
+      TextEditingController(text: widget.item.price.toStringAsFixed(2));
 
-  String? _typeId;
+  late String? _typeId = widget.item.rugTypeId;
+
+  /// Doplačila, ki jih je mogoče izbrati: šifrant in doplačila, ki so že na
+  /// kosu, šifrant pa jih ne pozna več (izbrisana ali preimenovana predloga) —
+  /// sicer bi jih popravek tiho odstranil.
+  late final List<ExtraTemplate> _templates;
+
+  /// Izbrana doplačila po imenu. Ohranijo se takšna, kot so zapisana na kosu
+  /// (vrsta in znesek), da popravek drugega polja ne spremeni njihove cene.
+  late final Map<String, AppliedExtra> _selected;
 
   /// Cena sledi izračunu, dokler je delavec sam ne spremeni. Že prej ročno
-  /// določena cena se zato ne povozi tiho, ko se popravijo mere.
+  /// določena cena se zato ne povozi tiho, ko se popravijo mere ali doplačila.
   late bool _priceTouched;
 
   /// Ročni vnos površine imajo nepravilne oblike (RugItem.manualM2).
@@ -60,9 +69,29 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
   @override
   void initState() {
     super.initState();
-    _typeId = widget.item.rugTypeId;
-    final computed = widget.item.copyWith(clearConfirmedPrice: true).computedPrice;
-    final confirmed = widget.item.confirmedPrice;
+    final item = widget.item;
+    final catalog = [
+      for (final t in ref.read(repositoryProvider).extraTemplates)
+        // Vnos / Iznos sta doplačili naročila, ne kosa.
+        if (t.active && !t.isOrderLevel) t,
+    ];
+    final known = {for (final t in catalog) t.name};
+    _templates = [
+      // Enak vrstni red kot v Hitrem obračunu.
+      ...sortedQuickExtras(catalog),
+      for (final e in item.extras)
+        if (!known.contains(e.name))
+          ExtraTemplate(
+            id: 'applied-${e.name}',
+            name: e.name,
+            kind: e.kind,
+            value: e.value,
+          ),
+    ];
+    _selected = {for (final e in item.extras) e.name: e};
+
+    final computed = item.copyWith(clearConfirmedPrice: true).computedPrice;
+    final confirmed = item.confirmedPrice;
     _priceTouched = confirmed != null && (confirmed - computed).abs() > 0.005;
   }
 
@@ -71,51 +100,170 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
     _width.dispose();
     _length.dispose();
     _manualM2.dispose();
+    _discount.dispose();
     _price.dispose();
     super.dispose();
+  }
+
+  static String _plain(double? v) {
+    if (v == null) return '';
+    final s = v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
+    return s.replaceAll('.', ',');
   }
 
   double? _num(TextEditingController c) =>
       double.tryParse(c.text.trim().replaceAll(',', '.'));
 
-  /// Kos z vnešenimi vrednostmi — za površino, osnovo in izračun cene.
-  RugItem _preview(RugType? type) => widget.item.copyWith(
-    widthCm: _isManual ? null : _num(_width),
-    lengthCm: _isManual ? null : _num(_length),
-    manualM2: _isManual ? _num(_manualM2) : null,
-    clearManualM2: !_isManual,
-    rugTypeId: type?.id,
-    rugTypeName: type?.name,
-    pricePerM2: type?.pricePerM2,
-    minChargeM2: type?.minChargeM2,
-    clearConfirmedPrice: true,
-  );
+  double get _discountPercent => _num(_discount) ?? 0;
 
-  /// Po vsaki spremembi vrste ali mer: cena sledi izračunu, razen če jo je
-  /// delavec že sam popravil.
-  void _changed() {
+  double get _m2 {
+    if (_isManual) return _num(_manualM2) ?? 0;
+    return (_num(_width) ?? 0) * (_num(_length) ?? 0) / 10000;
+  }
+
+  /// Vrsta, kakršna je zapisana na kosu. Cena na m² in minimalni obračun sta
+  /// ob obračunu prepisana na kos, zato popravek, ki vrste ne menja, kosa ne
+  /// sme tiho preceniti po današnjem ceniku — in ne sme odpovedati, če je
+  /// vrsta medtem izbrisana iz šifranta.
+  RugType? get _ownType {
+    final item = widget.item;
+    if (item.rugTypeId == null) return null;
+    return RugType(
+      id: item.rugTypeId!,
+      name: item.rugTypeName,
+      pricePerM2: item.pricePerM2,
+      minChargeM2: item.minChargeM2,
+    );
+  }
+
+  RugType? get _type {
+    final id = _typeId;
+    if (id == null) return null;
+    if (id == widget.item.rugTypeId) return _ownType;
+    return ref.read(repositoryProvider).rugType(id);
+  }
+
+  /// Kos z vnesenimi vrednostmi — za izračun osnove in cene. Veljavno samo,
+  /// ko je površina večja od 0 (prazno polje pusti staro vrednost).
+  RugItem _preview() {
+    final type = _type;
+    return widget.item.copyWith(
+      widthCm: _isManual ? null : _num(_width),
+      lengthCm: _isManual ? null : _num(_length),
+      manualM2: _isManual ? _num(_manualM2) : null,
+      clearManualM2: !_isManual,
+      rugTypeId: type?.id,
+      rugTypeName: type?.name,
+      pricePerM2: type?.pricePerM2,
+      minChargeM2: type?.minChargeM2,
+      extras: _selected.values.toList(),
+      discountPercent: _discountPercent,
+      clearConfirmedPrice: true,
+    );
+  }
+
+  /// Po vsaki spremembi vrste, mer, doplačil ali popusta: cena sledi izračunu,
+  /// razen če jo je delavec že sam popravil. Kliče se znotraj setState.
+  void _syncPrice() {
+    if (_priceTouched || _type == null || _m2 <= 0) return;
+    _price.text = _preview().computedPrice.toStringAsFixed(2);
+  }
+
+  /// Dotik doplačila z zneskom [value]. Postavka z izbiro (Dlake 5 € / 10 €)
+  /// ima tipko za vsak znesek: druga tipka iste postavke zamenja prvo, ponovni
+  /// dotik izbiro odstrani — enako kot v Hitrem obračunu.
+  void _tapExtra(ExtraTemplate t, double value) {
     setState(() {
-      if (!_priceTouched) {
-        final type = _typeId == null
-            ? null
-            : ref.read(repositoryProvider).rugType(_typeId!);
-        _price.text = _preview(type).computedPrice.toStringAsFixed(2);
+      final current = _selected[t.name];
+      if (t.hasChoices) {
+        if (current?.value == value) {
+          _selected.remove(t.name);
+        } else {
+          _selected[t.name] = AppliedExtra.fromTemplate(t, value: value);
+        }
+      } else if (current != null) {
+        _selected.remove(t.name);
+      } else {
+        _selected[t.name] = AppliedExtra.fromTemplate(t);
       }
+      _syncPrice();
     });
+  }
+
+  /// Ena tipka na doplačilo, z zneskom na tipki: "Urin +3 €/m²", "Dlake +5 €",
+  /// "Dlake +10 €". Zapisano doplačilo ohrani svoj znesek in vrsto tudi na
+  /// tipki, če se je šifrant medtem spremenil.
+  List<Widget> _extraTiles() {
+    String label(ExtraTemplate t, double v) =>
+        '${t.name} ${v < 0 ? '−' : '+'}${formatExtraValue(v, t)}';
+
+    return [
+      for (final t in _templates)
+        if (t.hasChoices)
+          // Zapisan znesek, ki ga izbira ne pozna več, ostane viden in ga je
+          // mogoče odstraniti.
+          for (final c in {
+            ...t.choices,
+            if (_selected[t.name] != null) _selected[t.name]!.value,
+          })
+            ChoiceTile(
+              label: label(t, c),
+              selected: _selected[t.name]?.value == c,
+              onTap: () => _tapExtra(t, c),
+            )
+        else
+          ChoiceTile(
+            label: label(
+              _selected[t.name] == null
+                  ? t
+                  : t.copyWith(kind: _selected[t.name]!.kind),
+              _selected[t.name]?.value ?? t.value,
+            ),
+            selected: _selected.containsKey(t.name),
+            onTap: () => _tapExtra(t, t.value),
+          ),
+    ];
+  }
+
+  void _save(RugType type, double price) {
+    ref.read(repositoryProvider.notifier).editItemPricing(
+          widget.item.id,
+          widthCm: _isManual ? null : _num(_width),
+          lengthCm: _isManual ? null : _num(_length),
+          manualM2: _isManual ? _num(_manualM2) : null,
+          rugType: type,
+          extras: _selected.values.toList(),
+          discountPercent: _discountPercent,
+          price: price,
+        );
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
-    final types = sortedRugTypes(
-      state.rugTypes.where((t) => t.active || t.id == widget.item.rugTypeId),
-    );
-    final type = _typeId == null ? null : state.rugType(_typeId!);
-    final preview = _preview(type);
+    final item = widget.item;
+    final own = _ownType;
+    final types = sortedRugTypes([
+      for (final t in state.rugTypes)
+        if (t.active || t.id == item.rugTypeId) t,
+      // Vrsta, ki je šifrant ne pozna več, ostane izbrana na kosu.
+      if (own != null && state.rugType(own.id) == null) own,
+    ]);
+
+    final type = _type;
+    final area = _m2;
+    final preview = _preview();
     final price = _num(_price);
-    final valid = type != null && preview.m2 > 0 && price != null && price >= 0;
+    final discount = _discountPercent;
+    final valid = type != null &&
+        area > 0 &&
+        price != null &&
+        price >= 0 &&
+        discount >= 0 &&
+        discount <= 100;
     final differs =
-        price != null && (price - preview.computedPrice).abs() > 0.005;
+        area > 0 && price != null && (price - preview.computedPrice).abs() > 0.005;
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -137,29 +285,21 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
             ),
             const SizedBox(height: 14),
             Text(
-              'Uredi mere in ceno · ${widget.item.id}',
+              'Uredi kos · ${item.id}',
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SectionHeader('Vrsta preproge'),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 4.2,
-              children: [
-                for (final t in types)
-                  ChoiceTile(
-                    label: t.name,
-                    selected: _typeId == t.id,
-                    onTap: () {
-                      _typeId = t.id;
-                      _changed();
-                    },
-                  ),
-              ],
-            ),
+            _grid([
+              for (final t in types)
+                ChoiceTile(
+                  label: t.name,
+                  selected: _typeId == t.id,
+                  onTap: () => setState(() {
+                    _typeId = t.id;
+                    _syncPrice();
+                  }),
+                ),
+            ]),
             const SectionHeader('Mere'),
             if (_isManual)
               _numField(_manualM2, 'Površina (m²)')
@@ -179,12 +319,44 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
               ),
             const SizedBox(height: 8),
             Text(
-              preview.m2 == 0
+              area <= 0
                   ? 'Površina: —'
-                  : 'Površina: ${Fmt.m2(preview.m2)}'
+                  : 'Površina: ${Fmt.m2(area)}'
                         '${preview.usesMinCharge ? ' (obračun ${Fmt.m2(preview.chargeableM2)})' : ''}'
                         ' · osnova ${Fmt.money(preview.basePrice)}',
               style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+            ),
+            if (_templates.isNotEmpty) ...[
+              const SectionHeader('Doplačila'),
+              _grid(_extraTiles()),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Popust na kos',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    controller: _discount,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.right,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    ],
+                    decoration: const InputDecoration(
+                      suffixText: '%',
+                      isDense: true,
+                    ),
+                    onChanged: (_) => setState(_syncPrice),
+                  ),
+                ),
+              ],
             ),
             const SectionHeader('Končna cena'),
             TextField(
@@ -206,7 +378,7 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
                 Expanded(
                   child: Text(
                     'Izračun z doplačili in popustom: '
-                    '${Fmt.money(preview.computedPrice)}',
+                    '${area > 0 ? Fmt.money(preview.computedPrice) : '—'}',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.textMuted,
@@ -215,31 +387,17 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
                 ),
                 if (differs)
                   TextButton(
-                    onPressed: () {
+                    onPressed: () => setState(() {
                       _priceTouched = false;
-                      _changed();
-                    },
+                      _syncPrice();
+                    }),
                     child: const Text('Uporabi izračun'),
                   ),
               ],
             ),
             const SizedBox(height: 14),
             FilledButton.icon(
-              onPressed: valid
-                  ? () {
-                      ref
-                          .read(repositoryProvider.notifier)
-                          .editItemPricing(
-                            widget.item.id,
-                            widthCm: preview.widthCm,
-                            lengthCm: preview.lengthCm,
-                            manualM2: preview.manualM2,
-                            rugType: type,
-                            price: price,
-                          );
-                      Navigator.pop(context);
-                    }
-                  : null,
+              onPressed: valid ? () => _save(type, price) : null,
               icon: const Icon(Icons.check),
               label: Text('Shrani · ${Fmt.money(price ?? 0)}'),
             ),
@@ -249,12 +407,25 @@ class _EditPricingSheetState extends ConsumerState<EditPricingSheet> {
     );
   }
 
+  /// 2 gumba v vrsto, enako kot v Hitrem obračunu.
+  Widget _grid(List<Widget> children) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 6,
+      crossAxisSpacing: 6,
+      childAspectRatio: 4.2,
+      children: children,
+    );
+  }
+
   Widget _numField(TextEditingController c, String label) {
     return TextField(
       controller: c,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-      onChanged: (_) => _changed(),
+      onChanged: (_) => setState(_syncPrice),
       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
       decoration: InputDecoration(labelText: label),
     );

@@ -20,7 +20,7 @@ class ManualScreen extends StatelessWidget {
           _Step(
             n: '1',
             title: 'Sprejem naročila',
-            body: 'Na zaslonu Danes odpreš Hiter vnos naročila: telefon, ime, '
+            body: 'Na zaslonu Danes izpolniš Hiter vnos naročila: telefon, ime, '
                 'Pripeljano ali Naš prevzem, regija (LJ / MB / CE / DOL) in '
                 'število kosov. Aplikacija sama naredi etikete za vsak kos '
                 'posebej.',
@@ -82,6 +82,13 @@ class ManualScreen extends StatelessWidget {
             icon: Icons.edit_outlined,
             text: 'Če je etiketa strgana ali umazana, uporabi Ročni vnos kode '
                 'pod skenerjem in vpiši oznako (npr. LJ-001-2).',
+          ),
+          _Tip(
+            icon: Icons.build_outlined,
+            text: 'Napaka pri naročilu? V podrobnostih naročila ikona koša '
+                'izbriše celo naročilo (dokler ni zaključeno), ⋮ ob kosu → '
+                'Uredi kos popravi vrsto, mere, doplačila in ceno, svinčnik '
+                'zgoraj pa stranko, termine in Vnos / Iznos.',
           ),
           _Tip(
             icon: Icons.signal_wifi_off,

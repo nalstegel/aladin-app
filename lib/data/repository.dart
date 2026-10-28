@@ -286,6 +286,23 @@ class Repository extends StateNotifier<AppState> {
     _commit(state.copyWith(orders: list));
   }
 
+  /// Izbriše odprto naročilo skupaj z vsemi njegovimi kosi (napačen vnos,
+  /// podvojeno naročilo). Vrne false, če naročila ni ali je že zaključeno.
+  ///
+  /// Zaključeno naročilo se ne briše: hrani dokazilo o vračilu (podpis), zaradi
+  /// katerega aplikacija sploh obstaja. Števec številk se ne zmanjša — natisnjena
+  /// etiketa izbrisanega naročila je lahko še na preprogi, zato se številka ne
+  /// sme ponovno uporabiti za drugo stranko.
+  bool deleteOrder(String orderId) {
+    final order = state.order(orderId);
+    if (order == null || !order.status.isOpen) return false;
+    _commit(state.copyWith(
+      orders: state.orders.where((o) => o.id != orderId).toList(),
+      items: state.items.where((i) => i.orderId != orderId).toList(),
+    ));
+    return true;
+  }
+
   /// Dodaj kos obstoječemu naročilu (stranka je prinesla še eno preprogo).
   RugItem addItemToOrder(String orderId) {
     final order = state.order(orderId);
@@ -640,21 +657,26 @@ class Repository extends StateNotifier<AppState> {
     ));
   }
 
-  /// Direktno urejanje po obračunu (V10 §1): vrsta, mere in končna cena že
-  /// obračunanega kosa. Status se ne spremeni — površina, osnova in obračun
-  /// naročila se izpeljejo iz kosa, zato se vse osveži samo. Doplačila in
-  /// popust kosa ostanejo, kot so bila.
+  /// Popravek že obračunanega kosa: vrsta, mere, doplačila, popust in končna
+  /// cena. Status se ne spremeni (kos ne gre nazaj v Sušenje), površina, osnova
+  /// in obračun naročila se izpeljejo iz kosa, zato se osvežijo sami.
+  ///
+  /// [extras] in [discountPercent] ostaneta, kot sta bila, če nista podana.
+  /// V zgodovino se zapiše samo, kar se je res spremenilo; popravek brez
+  /// sprememb ne naredi ničesar. Vrnjenega kosa ni mogoče popraviti.
   void editItemPricing(
     String itemId, {
     double? widthCm,
     double? lengthCm,
     double? manualM2,
     required RugType rugType,
+    List<AppliedExtra>? extras,
+    double? discountPercent,
     required double price,
   }) {
     final item = state.item(itemId);
-    if (item == null) return;
-    _saveItem(item.copyWith(
+    if (item == null || item.status == RugStatus.returned) return;
+    final updated = item.copyWith(
       widthCm: widthCm,
       lengthCm: lengthCm,
       manualM2: manualM2,
@@ -663,12 +685,37 @@ class Repository extends StateNotifier<AppState> {
       rugTypeName: rugType.name,
       pricePerM2: rugType.pricePerM2,
       minChargeM2: rugType.minChargeM2,
+      extras: extras,
+      discountPercent: discountPercent,
       confirmedPrice: price,
+    );
+
+    String extrasKey(List<AppliedExtra> list) =>
+        (list.map((e) => '${e.name}|${e.kind.name}|${e.value}').toList()
+              ..sort())
+            .join(';');
+
+    final changes = [
+      if (updated.rugTypeId != item.rugTypeId ||
+          updated.pricePerM2 != item.pricePerM2 ||
+          updated.minChargeM2 != item.minChargeM2)
+        'vrsta',
+      if (updated.widthCm != item.widthCm ||
+          updated.lengthCm != item.lengthCm ||
+          updated.manualM2 != item.manualM2)
+        'mere',
+      if (extrasKey(updated.extras) != extrasKey(item.extras)) 'doplačila',
+      if (updated.discountPercent != item.discountPercent) 'popust',
+      if ((price - item.price).abs() > 0.004) 'cena',
+    ];
+    if (changes.isEmpty) return;
+
+    _saveItem(updated.copyWith(
       history: _event(
         item,
         item.status,
         DateTime.now(),
-        'Mere in cena popravljene: ${price.toStringAsFixed(2)} €',
+        'Popravljeno (${changes.join(', ')}): ${price.toStringAsFixed(2)} €',
       ),
     ));
   }

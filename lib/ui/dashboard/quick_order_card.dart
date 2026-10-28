@@ -44,7 +44,6 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
   DateTime _pickupDate = DateTime.now();
   TimeOfDay? _pickupStart;
   TimeOfDay? _pickupEnd;
-  bool _expanded = false;
 
   @override
   void initState() {
@@ -99,34 +98,26 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
       ),
       child: Column(
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  const Icon(Icons.bolt, color: AppColors.primary, size: 20),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Hiter vnos naročila',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                    ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(Icons.bolt, color: AppColors.primary, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Hiter vnos naročila',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: AppColors.textMuted,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          if (_expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              child: _form(),
-            ),
+          // Obrazec je vedno odprt — to je glavno mesto za sprejem naročila.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: _form(),
+          ),
         ],
       ),
     );
@@ -425,7 +416,6 @@ class _QuickOrderCardState extends ConsumerState<QuickOrderCard> {
       _deliveryFee = 0;
       _pickupStart = null;
       _pickupEnd = null;
-      _expanded = false;
     });
 
     // Pripeljano: najprej hiter korak prevzema, nato etikete (V8 §2).

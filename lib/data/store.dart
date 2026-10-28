@@ -335,6 +335,15 @@ class FirestoreStore implements DataStore {
       batch.set(_orders.doc(order.id), payload);
       writes++;
     }
+    // Ta zanka za razliko od diff() zgoraj ne zna brisati — brez tega bi
+    // izbrisano naročilo ostalo v bazi, ob naslednjem posnetku se vrnilo na
+    // vse telefone, njegovi (izbrisani) kosi pa bi manjkali.
+    final currentOrderIds = {for (final o in state.orders) o.id};
+    for (final id in oldOrdersById.keys) {
+      if (currentOrderIds.contains(id)) continue;
+      batch.delete(_orders.doc(id));
+      writes++;
+    }
 
     if (state.nextOrderSeqLjubljana != _lastSaved.nextOrderSeqLjubljana ||
         state.nextOrderSeqMaribor != _lastSaved.nextOrderSeqMaribor ||

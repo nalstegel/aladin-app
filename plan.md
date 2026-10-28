@@ -866,7 +866,8 @@ sem jih izbral sam, so označene z ⚑ — preveri jih.
   `callCustomer`, ne `callPhone`.**
 - **Direktno urejanje.** Podrobnosti kosa: „Uredi mere in ceno“
   (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`): vrsta,
-  širina/dolžina (ali m² pri ročnem vnosu) in končna cena; status se ne
+  širina/dolžina (ali m² pri ročnem vnosu), doplačila, popust (oboje dodano v
+  §4.13) in končna cena; status se ne
   spremeni, površina/osnova/obračun naročila se izpeljejo sami. Cena sledi
   izračunu, dokler je ne spremeniš sam; že prej ročno določena cena se ob
   popravku mer ne povozi tiho (ponudi se „Uporabi izračun“). Podrobnosti
@@ -944,6 +945,50 @@ Dostav, vrstni red Hitrega obračuna, množina, obvestila),
 na podrobnostih, snackbar), `test/zpl_test.dart` prepisan. `flutter analyze`
 čist. **Ni preverjeno na napravi** (lastnik preverja ročno): vizualno (razmik,
 velikost tipk, občutek vlečenja) ni preverjeno.
+
+### 4.13 — Brisanje naročil, urejanje kosov, Hiter vnos vedno odprt — DONE v kodi (2026-10-26)
+Veja `feature/delete-and-edit-orders` (v `development` s PR #12) je bila namenoma
+narejena iz `development` brez V10. 2026-10-28 je bil `development` združen v
+`fix/post-live-qa-v10`; ker sta obe veji dodali `EditPricingSheet` /
+`editItemPricing`, velja ena različica — spodaj opisana, ki je nadmnožica V10 §1.
+⚑ = odločitev, ki je ni podal lastnik.
+
+- **Izbris naročila.** Koš v glavi podrobnosti naročila → potrditev → vrne na
+  prvi zaslon (`Repository.deleteOrder`). ⚑ Briše se samo **odprto** naročilo:
+  zaključeno hrani dokazilo o vračilu (podpis), zato gumba nima in
+  `deleteOrder` vrne false. Briše se naročilo + vsi njegovi kosi; stranka ostane
+  (CRM). Števec številk se ne zmanjša — natisnjena etiketa izbrisanega naročila
+  je lahko še na preprogi, številka se ne ponovi.
+  **Past, ki je bila v `FirestoreStore.save`:** zbirke so se brisale prek
+  `diff()`, naročila pa imajo svojo zanko (zaradi podpisa) in so se samo pisala —
+  izbrisano naročilo bi ostalo v bazi in se ob naslednjem posnetku vrnilo brez
+  kosov. Zanka zdaj briše tudi naročila, ki jih ni več v stanju.
+  **Ni preverjeno proti živemu Firebase** (v testih ga ni mogoče pognati).
+- **Uredi kos** (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`):
+  vrsta, mere (ali m² pri ročnem vnosu), doplačila, popust in končna cena že
+  obračunanega kosa; status se ne spremeni. Dostop: ⋮ ob kosu na podrobnostih
+  naročila ali „Uredi mere in ceno“ v bloku Mere in cena na kosu. Vrste in
+  doplačila so urejena kot v Hitrem obračunu (`sortedRugTypes`,
+  `sortedQuickExtras`), doplačila z izbiro pa imajo tipko za vsak znesek
+  („Dlake +5 €“ / „Dlake +10 €“). Pravila: cena sledi
+  izračunu, dokler je ne spremeniš sam (ročno določena se ne povozi); vrsta, ki
+  je ne spremeniš, obdrži ceno na m², zapisano na kosu (sicer bi popravek tiho
+  prečenil kos po današnjem ceniku); doplačilo, ki ga šifrant ne pozna več, ostane.
+  Zgodovina kosa dobi vrstico „Popravljeno (vrsta, cena): 154.44 €“ s tem, kar se
+  je res spremenilo; popravek brez sprememb ne zapiše nič. Neobračunan kos (še
+  brez vrste in mer) se ne ureja — vrsto in mere dobi v Hitrem obračunu.
+- **Vnos / Iznos naknadno:** „Uredi naročilo“ ima razdelek „Doplačila prevzema“.
+  Že zapisano doplačilo ohrani svoj znesek, tudi če je lastnik ceno v šifrantu
+  medtem spremenil. `templateOrFallback` (`models/catalog.dart`) je skupen s
+  `PickupSheet`.
+- **Hiter vnos** na Danes je vedno odprt (brez zložljive glave); štirje bloki pod
+  njim ostanejo zaprti.
+- ⚑ Zgodovina kosa po popravku našteje spremenjeno („Popravljeno (vrsta, cena)“);
+  V10 je zapisal vedno „Mere in cena popravljene“. `test/v10_test.dart` je
+  prilagojen.
+- **Testi:** `test/delete_and_edit_test.dart` (25 testov: repozitorij + zasloni).
+  **Ni preverjeno na napravi:** vizualno (velikost mrežnih gumbov v sheetu,
+  meni ⋮ na ozkih telefonih) ni preverjeno.
 
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
