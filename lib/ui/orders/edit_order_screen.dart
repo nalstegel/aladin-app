@@ -4,18 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
+import '../../models/catalog.dart';
 import '../../models/customer.dart';
 import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../customers/customer_form.dart';
 import '../widgets/common.dart';
 import '../widgets/delivery_fee_stepper.dart';
+import '../widgets/extra_choice.dart';
 import '../widgets/pickup_window_picker.dart';
 
 /// Urejanje podatkov obstoječega naročila (stranka, kanal, termini,
-/// opomba). Območje se ne spreminja — določilo je predpono ID-ja ob
-/// ustvarjanju in bi sprememba naredila neskladje z že natisnjenimi
-/// etiketami. Število kosov ima svojo pot (gumb "Dodaj kos" na naročilu).
+/// doplačila prevzema, opomba). Območje se ne spreminja — določilo je
+/// predpono ID-ja ob ustvarjanju in bi sprememba naredila neskladje z že
+/// natisnjenimi etiketami. Število kosov ima svojo pot (gumb "Dodaj kos" na
+/// naročilu).
 class EditOrderScreen extends ConsumerStatefulWidget {
   const EditOrderScreen({super.key, required this.orderId});
 
@@ -36,6 +39,10 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
   DateTime? _deliveryAt;
   DateTime? _dueAt;
   late double _deliveryFee;
+
+  /// Izbrani Vnos / Iznos (po imenu). Že zapisana doplačila ohranijo svoj
+  /// znesek, tudi če je lastnik cene v šifrantu medtem spremenil.
+  late final Set<String> _orderExtraNames;
   final _search = TextEditingController();
   late final TextEditingController _notes;
   bool _pickingCustomer = false;
@@ -60,6 +67,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     _deliveryAt = order.deliveryAt;
     _dueAt = order.dueAt;
     _deliveryFee = order.deliveryFee;
+    _orderExtraNames = {for (final e in order.orderExtras) e.name};
     _notes = TextEditingController(text: order.notes);
   }
 
@@ -106,6 +114,12 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
           _customerSection(),
           const SectionHeader('Termini'),
           _dates(),
+          const SectionHeader(
+            'Doplačila prevzema',
+            subtitle: 'Vnos in iznos — tudi naknadno, če ju ob prevzemu '
+                'nismo vpisali.',
+          ),
+          _orderExtras(),
           const SectionHeader('Opomba'),
           TextField(
             controller: _notes,
@@ -132,6 +146,46 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  List<ExtraTemplate> _orderExtraTemplates() {
+    final catalog = ref.read(repositoryProvider).extraTemplates;
+    return [
+      for (final f in fallbackOrderExtras) templateOrFallback(catalog, f),
+    ];
+  }
+
+  AppliedExtra? _recorded(String name) {
+    for (final e in _original.orderExtras) {
+      if (e.name == name) return e;
+    }
+    return null;
+  }
+
+  Widget _orderExtras() {
+    final templates = _orderExtraTemplates();
+    return Row(
+      children: [
+        for (final t in templates) ...[
+          if (t != templates.first) const SizedBox(width: 8),
+          Expanded(
+            child: SizedBox(
+              height: 46,
+              child: ChoiceTile(
+                label: '${t.name} +'
+                    '${formatExtraValue(_recorded(t.name)?.value ?? t.value, t)}',
+                selected: _orderExtraNames.contains(t.name),
+                onTap: () => setState(() {
+                  if (!_orderExtraNames.remove(t.name)) {
+                    _orderExtraNames.add(t.name);
+                  }
+                }),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -433,6 +487,17 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     final deliveryAt =
         _handover == HandoverMode.weDeliver ? _deliveryAt : null;
 
+    final templates = _orderExtraTemplates();
+    final offered = {for (final t in templates) t.name};
+    final orderExtras = [
+      // Doplačila, ki jih ta zaslon ne ponuja, ostanejo, kot so.
+      for (final e in _original.orderExtras)
+        if (!offered.contains(e.name)) e,
+      for (final t in templates)
+        if (_orderExtraNames.contains(t.name))
+          _recorded(t.name) ?? AppliedExtra.fromTemplate(t),
+    ];
+
     final updated = _original.copyWith(
       channel: _channel,
       handover: _handover,
@@ -449,6 +514,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
       dueAt: _dueAt,
       clearDueAt: _dueAt == null,
       deliveryFee: _channel == OrderChannel.dropoff ? 0 : _deliveryFee,
+      orderExtras: orderExtras,
       notes: _notes.text,
     );
     repo.updateOrder(updated);

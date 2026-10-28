@@ -10,6 +10,7 @@ import '../../models/rug_item.dart';
 import '../orders/labels_screen.dart';
 import '../orders/order_detail_screen.dart';
 import '../widgets/common.dart';
+import 'edit_pricing_sheet.dart';
 import 'finish_sheet.dart';
 import 'quick_finish_sheet.dart';
 
@@ -156,7 +157,18 @@ class RugDetailScreen extends ConsumerWidget {
               ),
             ),
           ],
-          const SectionHeader('Mere in cena'),
+          SectionHeader(
+            'Mere in cena',
+            // Popravek vrste, mer, doplačil in cene, ne da bi kos vračali v
+            // Sušenje.
+            trailing: item.isMeasured && item.status != RugStatus.returned
+                ? TextButton.icon(
+                    onPressed: () => EditPricingSheet.show(context, item),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Uredi'),
+                  )
+                : null,
+          ),
           AppCard(
             child: item.isMeasured
                 ? Column(

@@ -13,6 +13,7 @@ import '../../models/enums.dart';
 import '../../models/order.dart';
 import '../../models/return_proof.dart';
 import '../../models/rug_item.dart';
+import '../rugs/edit_pricing_sheet.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
 import 'edit_order_screen.dart';
@@ -61,6 +62,14 @@ class OrderDetailScreen extends ConsumerWidget {
               ),
             ),
           ),
+          // Zaključeno naročilo hrani dokazilo o vračilu — tega ne brišemo.
+          if (order.status.isOpen)
+            IconButton(
+              tooltip: 'Izbriši naročilo',
+              icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+              onPressed: () =>
+                  _confirmDeleteOrder(context, repo, order, items.length),
+            ),
         ],
       ),
       body: ListView(
@@ -154,6 +163,13 @@ class OrderDetailScreen extends ConsumerWidget {
           for (final item in items) ...[
             _ItemRow(
               item: item,
+              // Vrsto, mere, doplačila in ceno je mogoče popraviti, ko je kos
+              // obračunan; prej teh podatkov še ni.
+              onEdit: order.status.isOpen &&
+                      item.isMeasured &&
+                      item.status != RugStatus.returned
+                  ? () => EditPricingSheet.show(context, item)
+                  : null,
               onDelete: order.status.isOpen && items.length > 1
                   ? () => _confirmRemoveItem(context, repo, item)
                   : null,
@@ -508,10 +524,63 @@ Future<void> _confirmRemoveItem(
   }
 }
 
+Future<void> _confirmDeleteOrder(
+  BuildContext context,
+  Repository repo,
+  WorkOrder order,
+  int itemCount,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Izbrišem naročilo ${order.number}?'),
+      content: Text(
+        '${order.customerName} · ${Fmt.pieces(itemCount)}\n\n'
+        'Naročilo in vsi njegovi kosi bodo trajno izbrisani. Že natisnjene '
+        'etikete ne bodo več delovale.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Prekliči'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Izbriši'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final route = ModalRoute.of(context);
+
+  // Nazaj na prvi zaslon: zaslon pod tem (npr. kos tega naročila) bi sicer
+  // ostal brez podatkov. Naročilo izbrišemo šele, ko se ta zaslon zapre —
+  // sicer bi se med animacijo zaprtja pokazalo "Naročilo ne obstaja".
+  navigator.popUntil((r) => r.isFirst);
+  await route?.completed;
+
+  final deleted = repo.deleteOrder(order.id);
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        deleted
+            ? 'Naročilo ${order.number} izbrisano'
+            : 'Naročila ${order.number} ni bilo mogoče izbrisati.',
+      ),
+    ),
+  );
+}
+
 class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item, this.onDelete});
+  const _ItemRow({required this.item, this.onEdit, this.onDelete});
 
   final RugItem item;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -586,20 +655,40 @@ class _ItemRow extends StatelessWidget {
               ),
             ],
           ),
-          if (onDelete != null) ...[
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: 'Odstrani kos',
-              icon: const Icon(Icons.delete_outline,
-                  color: AppColors.danger, size: 20),
-              onPressed: onDelete,
+          // En sam gumb namesto dveh ikon: vrstica je že polna in na ožjih
+          // telefonih bi se ID kosa prelomil.
+          if (onEdit != null || onDelete != null)
+            PopupMenuButton<_ItemAction>(
+              tooltip: 'Več',
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.more_vert, color: AppColors.textMuted),
+              onSelected: (action) => switch (action) {
+                _ItemAction.edit => onEdit?.call(),
+                _ItemAction.remove => onDelete?.call(),
+              },
+              itemBuilder: (_) => [
+                if (onEdit != null)
+                  const PopupMenuItem(
+                    value: _ItemAction.edit,
+                    child: Text('Uredi kos'),
+                  ),
+                if (onDelete != null)
+                  const PopupMenuItem(
+                    value: _ItemAction.remove,
+                    child: Text(
+                      'Odstrani kos',
+                      style: TextStyle(color: AppColors.danger),
+                    ),
+                  ),
+              ],
             ),
-          ],
         ],
       ),
     );
   }
 }
+
+enum _ItemAction { edit, remove }
 
 /// Vrstica bloka Podatki: labele v stolpcu enake širine, vrednosti poravnane
 /// levo pod sabo, da se blok hitro prebere (QA v4 §8). Telefon in naslov sta

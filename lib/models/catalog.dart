@@ -158,6 +158,19 @@ extension ExtraTemplateX on ExtraTemplate {
   bool get isOrderLevel => orderLevelExtraNames.contains(name);
 }
 
+/// Predloga doplačila po imenu iz šifranta; če je tam ni (več), vgrajena.
+/// Prevzem in urejanje naročila morata delovati tudi, če je lastnik
+/// Vnos / Iznos izbrisal iz šifranta.
+ExtraTemplate templateOrFallback(
+  Iterable<ExtraTemplate> catalog,
+  ExtraTemplate fallback,
+) {
+  for (final t in catalog) {
+    if (t.active && t.name == fallback.name) return t;
+  }
+  return fallback;
+}
+
 const fallbackOrderExtras = [
   ExtraTemplate(id: 'e-vnos', name: 'Vnos', kind: ExtraKind.fixed, value: 5),
   ExtraTemplate(id: 'e-iznos', name: 'Iznos', kind: ExtraKind.fixed, value: 5),

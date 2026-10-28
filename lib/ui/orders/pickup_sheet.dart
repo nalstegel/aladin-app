@@ -63,16 +63,6 @@ class _PickupSheetState extends ConsumerState<PickupSheet> {
     }
   }
 
-  ExtraTemplate _template(
-    List<ExtraTemplate> catalog,
-    ExtraTemplate fallback,
-  ) {
-    for (final t in catalog) {
-      if (t.active && t.name == fallback.name) return t;
-    }
-    return fallback;
-  }
-
   Future<void> _toggleItemExtra(RugItem item, ExtraTemplate t) async {
     final sel = _itemSel.putIfAbsent(item.id, () => {});
     if (!t.hasChoices) {
@@ -133,10 +123,12 @@ class _PickupSheetState extends ConsumerState<PickupSheet> {
         .toList();
 
     final orderTemplates = [
-      for (final f in fallbackOrderExtras) _template(state.extraTemplates, f),
+      for (final f in fallbackOrderExtras)
+        templateOrFallback(state.extraTemplates, f),
     ];
     final itemTemplates = [
-      for (final f in fallbackItemExtras) _template(state.extraTemplates, f),
+      for (final f in fallbackItemExtras)
+        templateOrFallback(state.extraTemplates, f),
     ];
 
     return Padding(
