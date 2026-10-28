@@ -20,12 +20,18 @@ void main() {
     final customer = repo.state.customers.first;
     final order = repo.createOrder(
       customer: customer,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 3,
     );
 
     expect(repo.state.itemsOf(order.id).length, 3);
+    // Brez natisnjenih etiket naročilo ostane v zavihku "Naročila".
+    expect(repo.state.item('${order.id}-1')!.status, RugStatus.awaitingPickup);
+    expect(repo.state.order(order.id)!.status, OrderStatus.scheduledPickup);
+
+    repo.markOrderPickedUp(order.id);
     expect(repo.state.item('${order.id}-1')!.status, RugStatus.awaitingWash);
     expect(repo.state.order(order.id)!.status, OrderStatus.inProduction);
 
@@ -61,6 +67,7 @@ void main() {
     final customer = repo.state.customers.first;
     final order = repo.createOrder(
       customer: customer,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.delivery,
       handover: HandoverMode.weDeliver,
       itemCount: 1,
@@ -85,13 +92,15 @@ void main() {
   test('minimalni obračun dvigne ceno majhne preproge', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
-    // Sintetika: 12 €/m², minimalni obračun 3 m².
-    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Sintetika');
+    // Navadna: 12 €/m², minimalni obračun 3 m².
+    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Sintetika / tanki tepihi');
 
     repo.advance(id);
     repo.setMeasurements(id, widthCm: 100, lengthCm: 100, rugType: type);
@@ -105,10 +114,12 @@ void main() {
   test('doplačila in popust se pravilno seštejejo', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Volna');
     repo.advance(id);
@@ -133,10 +144,12 @@ void main() {
   test('vračilo shrani dokazilo in zaključi naročilo', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 2,
     );
+    repo.markOrderPickedUp(order.id);
     final type = repo.state.rugTypes.first;
     for (var n = 1; n <= 2; n++) {
       final id = '${order.id}-$n';
@@ -167,13 +180,54 @@ void main() {
     );
   });
 
-  test('ponovno pranje razveljavi potrjeno ceno', () {
+  test('hitri obračun premakne kos naravnost iz sušenja v pripravljeno', () {
     final order = repo.createOrder(
       customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
       channel: OrderChannel.dropoff,
       handover: HandoverMode.customerCollects,
       itemCount: 1,
     );
+    repo.markOrderPickedUp(order.id);
+    final id = '${order.id}-1';
+    final type = repo.state.rugTypes.firstWhere((t) => t.name == 'Volna');
+    repo.advance(id);
+    expect(repo.state.item(id)!.status, RugStatus.drying);
+
+    // Osnova 6 m² × 15 € = 90 €, +20 % madeži = 108 €, −10 % popust = 97,20 €.
+    repo.finishRugFromDrying(
+      id,
+      widthCm: 200,
+      lengthCm: 300,
+      rugType: type,
+      extras: const [
+        AppliedExtra(
+          name: 'Odstranjevanje madežev',
+          kind: ExtraKind.percent,
+          value: 20,
+        ),
+      ],
+      discountPercent: 10,
+    );
+
+    final item = repo.state.item(id)!;
+    // Nikoli ne postane "finishing" — v3 spec §5 to namenoma ni več ločen
+    // status, skozi katerega bi se kos ustavil.
+    expect(item.status, RugStatus.ready);
+    expect(item.rugTypeName, 'Volna');
+    expect(item.price, closeTo(97.20, 0.01));
+    expect(repo.state.order(order.id)!.status, OrderStatus.awaitingCollection);
+  });
+
+  test('ponovno pranje razveljavi potrjeno ceno', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 1,
+    );
+    repo.markOrderPickedUp(order.id);
     final id = '${order.id}-1';
     final type = repo.state.rugTypes.first;
     repo.advance(id);
@@ -186,5 +240,61 @@ void main() {
     expect(repo.state.item(id)!.status, RugStatus.awaitingWash);
     expect(repo.state.item(id)!.confirmedPrice, isNull);
     expect(repo.state.order(order.id)!.status, OrderStatus.inProduction);
+  });
+
+  test('odstranitev kosa prešteje ostale in ne dovoli zadnjega', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 3,
+    );
+    repo.markOrderPickedUp(order.id);
+
+    repo.removeItemFromOrder('${order.id}-2');
+
+    final remaining = repo.state.itemsOf(order.id);
+    expect(remaining.length, 2);
+    expect(remaining.map((i) => i.id), ['${order.id}-1', '${order.id}-3']);
+    expect(remaining.every((i) => i.ofTotal == 2), isTrue);
+    expect(repo.state.order(order.id)!.itemCount, 2);
+
+    repo.removeItemFromOrder('${order.id}-1');
+    expect(() => repo.removeItemFromOrder('${order.id}-3'),
+        throwsA(isA<StateError>()));
+    expect(repo.state.itemsOf(order.id).length, 1);
+  });
+
+  test('ponoven tisk etiket ne premakne kosov, ki so že v procesu', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 2,
+    );
+    repo.markOrderPickedUp(order.id);
+    repo.advance('${order.id}-1');
+    expect(repo.state.item('${order.id}-1')!.status, RugStatus.drying);
+
+    repo.markOrderPickedUp(order.id);
+    expect(repo.state.item('${order.id}-1')!.status, RugStatus.drying);
+    expect(repo.state.item('${order.id}-2')!.status, RugStatus.awaitingWash);
+  });
+
+  test('kos, dodan naročilu pred prevzemom, počaka z ostalimi', () {
+    final order = repo.createOrder(
+      customer: repo.state.customers.first,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.delivery,
+      handover: HandoverMode.weDeliver,
+      itemCount: 1,
+      pickupAt: DateTime.now().add(const Duration(days: 2)),
+    );
+    final added = repo.addItemToOrder(order.id);
+
+    expect(added.status, RugStatus.awaitingPickup);
+    expect(repo.state.order(order.id)!.status, OrderStatus.scheduledPickup);
   });
 }

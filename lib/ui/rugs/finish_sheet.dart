@@ -10,7 +10,7 @@ import '../../models/enums.dart';
 import '../../models/rug_item.dart';
 import '../widgets/common.dart';
 
-/// Končno sesanje: kaj se je dejansko delalo, potrditev cene → READY.
+/// Končno sesanje: kaj se je dejansko delalo, potrditev cene → Pripravljeno.
 class FinishSheet extends ConsumerStatefulWidget {
   const FinishSheet({super.key, required this.item});
 
@@ -67,7 +67,9 @@ class _FinishSheetState extends ConsumerState<FinishSheet> {
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final templates =
-        state.extraTemplates.where((t) => t.active).toList();
+        state.extraTemplates
+            .where((t) => t.active && !t.isOrderLevel)
+            .toList();
     final chosen = templates
         .where((t) => _selected.contains(t.id))
         .map(AppliedExtra.fromTemplate)
@@ -109,7 +111,7 @@ class _FinishSheetState extends ConsumerState<FinishSheet> {
             ),
             const SizedBox(height: 16),
             Text(
-              'Končna obdelava · ${widget.item.id}',
+              'Mere in cena · ${widget.item.id}',
               style:
                   const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
@@ -126,9 +128,11 @@ class _FinishSheetState extends ConsumerState<FinishSheet> {
             const SectionHeader('Kaj se je dejansko delalo'),
             for (final t in templates.where((t) => !t.isDiscount))
               _extraTile(t, preview),
-            const SectionHeader('Popusti'),
-            for (final t in templates.where((t) => t.isDiscount))
-              _extraTile(t, preview),
+            if (templates.any((t) => t.isDiscount)) ...[
+              const SectionHeader('Popusti'),
+              for (final t in templates.where((t) => t.isDiscount))
+                _extraTile(t, preview),
+            ],
             const SizedBox(height: 8),
             Row(
               children: [
@@ -251,7 +255,7 @@ class _FinishSheetState extends ConsumerState<FinishSheet> {
                 Navigator.pop(context);
               },
               icon: const Icon(Icons.check_circle_outline),
-              label: Text('Potrdi ${Fmt.money(finalPrice)} → READY'),
+              label: Text('Potrdi ${Fmt.money(finalPrice)} → Pripravljeno'),
             ),
           ],
         ),

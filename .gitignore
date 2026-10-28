@@ -46,3 +46,9 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Node (Cloud Functions)
+node_modules/
+
+# Local-only release scripts
+tool/release_ios.sh

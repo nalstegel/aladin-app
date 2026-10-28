@@ -14,6 +14,9 @@ class SignatureResult {
 }
 
 /// Stranka se s prstom podpiše na telefon. To je dokazilo o vračilu.
+///
+/// Odpre se kot sheet nad zaslonom Vračilo, takoj ko so označeni vsi kosi
+/// (QA v4 §6) — en prehod manj kot prej, ko je bil to ločen zaslon.
 class SignatureScreen extends StatefulWidget {
   const SignatureScreen({
     super.key,
@@ -21,6 +24,29 @@ class SignatureScreen extends StatefulWidget {
     required this.itemCount,
     required this.defaultName,
   });
+
+  static Future<SignatureResult?> show(
+    BuildContext context, {
+    required String orderNumber,
+    required int itemCount,
+    required String defaultName,
+  }) {
+    return showModalBottomSheet<SignatureResult>(
+      context: context,
+      isScrollControlled: true,
+      // Poteza s prstom po podpisnem polju ne sme zapreti sheeta.
+      enableDrag: false,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SignatureScreen(
+        orderNumber: orderNumber,
+        itemCount: itemCount,
+        defaultName: defaultName,
+      ),
+    );
+  }
 
   final String orderNumber;
   final int itemCount;
@@ -67,93 +93,116 @@ class _SignatureScreenState extends State<SignatureScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Podpis stranke')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Text(
-                _statement,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _name,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Ime osebe, ki prevzema',
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Podpis',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textMuted,
+    final media = MediaQuery.of(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: SizedBox(
+        height: media.size.height * 0.88,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + media.padding.bottom),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Podpis stranke',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: () => _controller.clear(),
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Počisti'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: Container(
+                  IconButton(
+                    tooltip: 'Zapri',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Container(
                 width: double.infinity,
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: _hasDrawn ? AppColors.primary : AppColors.border,
-                    width: _hasDrawn ? 1.6 : 1,
-                  ),
+                  border: Border.all(color: AppColors.border),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Signature(
-                    controller: _controller,
-                    backgroundColor: Colors.white,
+                child: Text(
+                  _statement,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.ready),
-              onPressed: _hasDrawn ? _submit : null,
-              icon: const Icon(Icons.check),
-              label: const Text('Podpiši in zaključi'),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Podpis se shrani skupaj z datumom, uro, seznamom kosov in '
-              'imenom zaposlenega, ki je izvedel predajo.',
-              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _name,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Ime osebe, ki prevzema',
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Podpis',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _controller.clear(),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Počisti'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _hasDrawn ? AppColors.primary : AppColors.border,
+                      width: _hasDrawn ? 1.6 : 1,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Signature(
+                      controller: _controller,
+                      backgroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.ready),
+                onPressed: _hasDrawn ? _submit : null,
+                icon: const Icon(Icons.check),
+                label: const Text('Podpiši in zaključi'),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Podpis se shrani skupaj z datumom, uro, seznamom kosov in '
+                'imenom zaposlenega, ki je izvedel predajo.',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ],
+          ),
         ),
       ),
     );

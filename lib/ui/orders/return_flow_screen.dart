@@ -5,23 +5,32 @@ import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../../models/return_proof.dart';
-import '../scanner/scanner_screen.dart';
+import '../scanner/scan_capture_screen.dart';
 import '../widgets/common.dart';
 import 'signature_screen.dart';
 
 /// Varovalka pri vračilu: dokler niso poskenirani vsi kosi, se naročila
 /// ne da zaključiti. Na koncu stranka podpiše prevzem.
 class ReturnFlowScreen extends ConsumerStatefulWidget {
-  const ReturnFlowScreen({super.key, required this.orderId});
+  const ReturnFlowScreen({
+    super.key,
+    required this.orderId,
+    this.initialScannedIds = const {},
+  });
 
   final String orderId;
+
+  /// Kos, ki je bil že poskeniran, preden se je ta zaslon odprl (glej
+  /// `scanner_screen.dart`: skeniranje pripravljenega kosa odpre naročilo
+  /// naravnost tukaj, namesto v podrobnosti kosa).
+  final Set<String> initialScannedIds;
 
   @override
   ConsumerState<ReturnFlowScreen> createState() => _ReturnFlowScreenState();
 }
 
 class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
-  final _scanned = <String>{};
+  late final _scanned = <String>{...widget.initialScannedIds};
 
   @override
   Widget build(BuildContext context) {
@@ -68,34 +77,41 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ReadyProgress(
-                  ready: _scanned.length,
-                  total: items.length,
-                  showLabel: false,
-                ),
+                PlainProgressBar(done: _scanned.length, total: items.length),
                 const SizedBox(height: 8),
                 Text(
                   '${_scanned.length}/${items.length} poskeniranih',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: allScanned
-                        ? AppColors.ready
-                        : AppColors.textMuted,
+                    color: allScanned ? AppColors.ready : AppColors.textMuted,
                   ),
                 ),
               ],
             ),
           ),
-          const SectionHeader(
+          SectionHeader(
             'Kosi',
-            subtitle: 'Poskeniraj vsak kos, preden ga izročiš.',
+            subtitle: 'Skeniraj ali odkljukaj vsak kos, preden ga izročiš.',
+            trailing: allScanned
+                ? null
+                : TextButton(
+                    onPressed: () =>
+                        setState(() => _scanned.addAll(items.map((e) => e.id))),
+                    child: const Text('Označi vse'),
+                  ),
           ),
           for (final item in items) ...[
             AppCard(
               borderColor: _scanned.contains(item.id)
                   ? AppColors.ready.withValues(alpha: 0.6)
                   : null,
+              // Ročni klik je enakovredna pot poleg skeniranja (ne samo za
+              // administratorja) — delavec lahko najde naročilo ročno in
+              // preprosto odkljuka kose, brez kamere.
+              onTap: () => setState(() {
+                if (!_scanned.remove(item.id)) _scanned.add(item.id);
+              }),
               child: Row(
                 children: [
                   Icon(
@@ -131,12 +147,6 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
                       ],
                     ),
                   ),
-                  if (!_scanned.contains(item.id) && isAdmin)
-                    TextButton(
-                      onPressed: () =>
-                          setState(() => _scanned.add(item.id)),
-                      child: const Text('Ročno'),
-                    ),
                 ],
               ),
             ),
@@ -173,8 +183,7 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
               if (isAdmin) ...[
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () =>
-                      _override(items.map((e) => e.id).toList()),
+                  onPressed: () => _override(items.map((e) => e.id).toList()),
                   child: const Text(
                     'Zaključi brez podpisa (administrator)',
                     style: TextStyle(color: AppColors.textMuted),
@@ -195,7 +204,7 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ScannerScreen(
+        builder: (context) => ScanCaptureScreen(
           title: 'Skeniraj kose za vračilo',
           onResult: (id) {
             if (!valid.contains(id)) {
@@ -233,20 +242,18 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
     final state = ref.read(repositoryProvider);
     final order = state.order(widget.orderId)!;
 
-    final result = await Navigator.push<SignatureResult>(
+    final result = await SignatureScreen.show(
       context,
-      MaterialPageRoute(
-        builder: (_) => SignatureScreen(
-          orderNumber: order.number,
-          itemCount: itemIds.length,
-          defaultName: order.customerName,
-        ),
-      ),
+      orderNumber: order.number,
+      itemCount: itemIds.length,
+      defaultName: order.customerName,
     );
     if (result == null || !mounted) return;
 
     final user = ref.read(currentUserProvider);
-    ref.read(repositoryProvider.notifier).completeReturn(
+    ref
+        .read(repositoryProvider.notifier)
+        .completeReturn(
           widget.orderId,
           ReturnProof(
             returnedAt: DateTime.now(),
@@ -259,12 +266,16 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
         );
 
     if (!mounted) return;
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.ready,
-        content: Text('Naročilo ${order.number} zaključeno'),
-      ),
+    _backToList('Naročilo ${order.number} zaključeno');
+  }
+
+  /// Po zaključku nazaj na seznam, od koder je delavec prišel (Naročila ali
+  /// Danes) — ne v podrobnosti že zaključenega naročila.
+  void _backToList(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    messenger.showSnackBar(
+      SnackBar(backgroundColor: AppColors.ready, content: Text(message)),
     );
   }
 
@@ -311,7 +322,9 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
     final state = ref.read(repositoryProvider);
     final order = state.order(widget.orderId)!;
 
-    ref.read(repositoryProvider.notifier).completeReturn(
+    ref
+        .read(repositoryProvider.notifier)
+        .completeReturn(
           widget.orderId,
           ReturnProof(
             returnedAt: DateTime.now(),
@@ -327,6 +340,6 @@ class _ReturnFlowScreenState extends ConsumerState<ReturnFlowScreen> {
         );
 
     if (!mounted) return;
-    Navigator.pop(context);
+    _backToList('Naročilo ${order.number} zaključeno brez podpisa');
   }
 }

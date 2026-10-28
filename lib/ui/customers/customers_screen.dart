@@ -31,92 +31,84 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final query = _search.text.trim().toLowerCase();
+    final digits = query.replaceAll(RegExp(r'\D'), '');
 
     final list = state.customers.where((c) {
       if (_filter != null && c.type != _filter) return false;
       if (query.isEmpty) return true;
       return c.name.toLowerCase().contains(query) ||
-          c.phone.replaceAll(' ', '').contains(query.replaceAll(' ', '')) ||
-          c.city.toLowerCase().contains(query);
+          c.email.toLowerCase().contains(query) ||
+          c.city.toLowerCase().contains(query) ||
+          (digits.isNotEmpty &&
+              c.phone.replaceAll(RegExp(r'\D'), '').contains(digits));
     }).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Stranke')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                hintText: 'Išči po imenu, telefonu ali kraju …',
-                prefixIcon: Icon(Icons.search),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            PageHeader(
+              'Stranke',
+              trailing: TextButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CustomerFormScreen()),
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Nova stranka'),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _filterChip('Vse', null),
-                const SizedBox(width: 8),
-                _filterChip('Osebe', CustomerType.private),
-                const SizedBox(width: 8),
-                _filterChip('Podjetja', CustomerType.company),
-              ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: SearchField(
+                controller: _search,
+                hint: 'Išči po imenu, telefonu ali e-pošti',
+                onChanged: (_) => setState(() {}),
+              ),
             ),
-          ),
-          Expanded(
-            child: list.isEmpty
-                ? const EmptyState(
-                    icon: Icons.people_outline,
-                    title: 'Ni zadetkov',
-                    message: 'Nova stranka se doda ob sprejemu naročila.',
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                    itemCount: list.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _tile(list[i]),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  FilterPill(
+                    label: 'Vse',
+                    selected: _filter == null,
+                    onTap: () => setState(() => _filter = null),
                   ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CustomerFormScreen()),
-        ),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.person_add_alt),
-        label: const Text('Nova stranka'),
-      ),
-    );
-  }
-
-  Widget _filterChip(String label, CustomerType? type) {
-    final selected = _filter == type;
-    return GestureDetector(
-      onTap: () => setState(() => _filter = type),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : AppColors.textMuted,
-          ),
+                  const SizedBox(width: 8),
+                  FilterPill(
+                    label: 'Osebe',
+                    selected: _filter == CustomerType.private,
+                    onTap: () =>
+                        setState(() => _filter = CustomerType.private),
+                  ),
+                  const SizedBox(width: 8),
+                  FilterPill(
+                    label: 'Podjetja',
+                    selected: _filter == CustomerType.company,
+                    onTap: () =>
+                        setState(() => _filter = CustomerType.company),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: list.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.people_outline,
+                      title: 'Ni zadetkov',
+                      message: 'Nova stranka se doda ob sprejemu naročila.',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      itemCount: list.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) => _tile(list[i]),
+                    ),
+            ),
+          ],
         ),
       ),
     );
@@ -124,8 +116,9 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 
   Widget _tile(Customer c) {
     final state = ref.watch(repositoryProvider);
-    final orders = state.ordersOf(c.id);
-    final open = orders.where((o) => o.status.isOpen).length;
+    final open = state.ordersOf(c.id).where((o) => o.status.isOpen).length;
+    final color =
+        c.isCompany ? AppColors.awaitingPickup : AppColors.primary;
 
     return AppCard(
       onTap: () => Navigator.push(
@@ -136,21 +129,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: (c.isCompany
-                    ? AppColors.awaitingPickup
-                    : AppColors.primary)
-                .withValues(alpha: 0.12),
-            child: Text(
-              c.initials,
-              style: TextStyle(
-                color:
-                    c.isCompany ? AppColors.awaitingPickup : AppColors.primary,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
+          AvatarCircle(c.name, color: color),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -161,12 +140,15 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   [c.phone, c.city].where((e) => e.isNotEmpty).join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13,
                     color: AppColors.textMuted,
@@ -175,22 +157,19 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               ],
             ),
           ),
-          if (open > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '$open aktivn${open == 1 ? "o" : "a"}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
+          if (open > 0) ...[
+            const SizedBox(width: 8),
+            Text(
+              '$open aktivn${open == 1 ? "o" : "a"}',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
               ),
             ),
+          ],
+          const SizedBox(width: 6),
+          const Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
         ],
       ),
     );

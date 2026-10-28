@@ -64,7 +64,12 @@ class CustomerDetailScreen extends ConsumerWidget {
                 if (c.phone.isNotEmpty) DetailRow('Telefon', c.phone),
                 if (c.email.isNotEmpty) DetailRow('E-pošta', c.email),
                 if (c.fullAddress.isNotEmpty)
-                  DetailRow('Naslov', c.fullAddress),
+                  DetailRow(
+                    'Naslov',
+                    c.fullAddress,
+                    valueAlign: TextAlign.left,
+                    valueFlex: 2,
+                  ),
                 if (c.taxId.isNotEmpty) DetailRow('Davčna', c.taxId),
                 if (c.contactPerson.isNotEmpty)
                   DetailRow('Kontakt', c.contactPerson),
@@ -140,7 +145,7 @@ class CustomerDetailScreen extends ConsumerWidget {
             )
           else
             for (final o in open) ...[
-              OrderCard(o, showChannel: true),
+              OrderCard(o),
               const SizedBox(height: 8),
             ],
           SectionHeader('Zgodovina (${past.length})'),
@@ -154,7 +159,7 @@ class CustomerDetailScreen extends ConsumerWidget {
             )
           else
             for (final o in past) ...[
-              OrderCard(o, showChannel: true),
+              OrderCard(o),
               const SizedBox(height: 8),
             ],
         ],

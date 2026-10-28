@@ -7,10 +7,12 @@ import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
 import '../../models/rug_item.dart';
+import '../orders/labels_screen.dart';
 import '../orders/order_detail_screen.dart';
 import '../widgets/common.dart';
+import 'edit_pricing_sheet.dart';
 import 'finish_sheet.dart';
-import 'measure_sheet.dart';
+import 'quick_finish_sheet.dart';
 
 /// Ena preproga. To okno se odpre ob vsakem skeniranju QR kode.
 class RugDetailScreen extends ConsumerWidget {
@@ -36,12 +38,31 @@ class RugDetailScreen extends ConsumerWidget {
     final color = AppColors.forRug(item.status);
 
     return Scaffold(
-      appBar: AppBar(title: Text(item.id)),
+      appBar: AppBar(
+        title: Text(item.id),
+        actions: [
+          // Individualni ponatis etikete tega kosa — status se ne spremeni.
+          IconButton(
+            tooltip: 'Natisni etiketo',
+            icon: const Icon(Icons.qr_code_2),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LabelsScreen(
+                  orderId: item.orderId,
+                  onlyItemId: item.id,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
           AppCard(
             padding: const EdgeInsets.all(18),
+            accent: color,
             borderColor: color.withValues(alpha: 0.5),
             child: Column(
               children: [
@@ -101,7 +122,7 @@ class RugDetailScreen extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          '${state.readyCount(order.id)}/${order.itemCount} READY · ${order.status.label}',
+                          '${state.readyCount(order.id)}/${order.itemCount} pripravljeno · ${order.status.label}',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textMuted,
@@ -136,7 +157,18 @@ class RugDetailScreen extends ConsumerWidget {
               ),
             ),
           ],
-          const SectionHeader('Mere in cena'),
+          SectionHeader(
+            'Mere in cena',
+            // Popravek vrste, mer, doplačil in cene, ne da bi kos vračali v
+            // Sušenje.
+            trailing: item.isMeasured && item.status != RugStatus.returned
+                ? TextButton.icon(
+                    onPressed: () => EditPricingSheet.show(context, item),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Uredi mere in ceno'),
+                  )
+                : null,
+          ),
           AppCard(
             child: item.isMeasured
                 ? Column(
@@ -327,15 +359,17 @@ class RugDetailScreen extends ConsumerWidget {
         );
       case RugStatus.drying:
         primary = FilledButton.icon(
-          onPressed: () => MeasureSheet.show(context, item),
+          onPressed: () => QuickFinishSheet.show(context, item),
           icon: const Icon(Icons.straighten),
-          label: const Text('Suho → vnesi mere'),
+          label: const Text('Hitri obračun'),
         );
       case RugStatus.finishing:
+        // Redek primer — kos je bil ročno vrnjen na "Mere in cena" (glej
+        // Popravi status spodaj). Normalni potek dela tja ne pripelje več.
         primary = FilledButton.icon(
           onPressed: () => FinishSheet.show(context, item),
           icon: const Icon(Icons.euro),
-          label: const Text('Končna obdelava in cena'),
+          label: const Text('Vnesi mere in ceno'),
         );
       case RugStatus.ready:
       case RugStatus.returned:

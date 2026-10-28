@@ -1,0 +1,48 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "aladin-app-d9427",
+          "appId": "1:450584317434:android:ed06d60f4f17987ae3e843",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "aladin-app-d9427",
+          "configurations": {
+            "android": "1:450584317434:android:ed06d60f4f17987ae3e843",
+            "ios": "1:450584317434:ios:bc3eb6dfaef06c5ee3e843"
+          }
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "aladin-app-d9427",
+          "appId": "1:450584317434:ios:bc3eb6dfaef06c5ee3e843",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      }
+    }
+  }
+}

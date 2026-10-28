@@ -25,23 +25,26 @@ AppState buildSeedState() {
     AppUser(id: 'u-ana', name: 'Ana', role: UserRole.worker),
   ];
 
+  // Štiri vrste po V10 §1 (Sintetika / tanki tepihi, Shaggy / kosmati-debelejši,
+  // Volna, Perzija / ročno vozlana) in pet doplačil po QA v4 §4 (Vnos/Iznos sta
+  // od V8 samo ob prevzemu). To so samo demo podatki — pravi šifrant živi v
+  // Firestoreju in ga ureja administrator v Več. Id-ji vrst ostajajo stari, da
+  // zgodovinski kosi spodaj (rugTypeName/AppliedExtra so lastni posnetki,
+  // neodvisni od šifranta) niso prizadeti — glej models/catalog.dart.
   const rugTypes = [
-    RugType(id: 't-sint', name: 'Sintetika', pricePerM2: 12, minChargeM2: 3),
+    RugType(id: 't-sint', name: 'Sintetika / tanki tepihi', pricePerM2: 12, minChargeM2: 3),
+    RugType(id: 't-shaggy', name: 'Shaggy / kosmati-debelejši', pricePerM2: 16, minChargeM2: 3),
     RugType(id: 't-volna', name: 'Volna', pricePerM2: 15, minChargeM2: 3),
     RugType(id: 't-perzija', name: 'Perzija / ročno vozlana', pricePerM2: 22, minChargeM2: 2),
-    RugType(id: 't-shaggy', name: 'Shaggy / visoki flor', pricePerM2: 16, minChargeM2: 3),
-    RugType(id: 't-tekac', name: 'Tekač / predpražnik', pricePerM2: 10, minChargeM2: 2),
   ];
 
   const extras = [
-    ExtraTemplate(id: 'e-madezi', name: 'Odstranjevanje madežev', kind: ExtraKind.percent, value: 20),
-    ExtraTemplate(id: 'e-dlake', name: 'Odstranjevanje dlak', kind: ExtraKind.percent, value: 15),
-    ExtraTemplate(id: 'e-dezinf', name: 'Dezinfekcija', kind: ExtraKind.perM2, value: 1.5),
-    ExtraTemplate(id: 'e-impreg', name: 'Impregnacija', kind: ExtraKind.perM2, value: 2),
-    ExtraTemplate(id: 'e-vonj', name: 'Odprava neprijetnih vonjav', kind: ExtraKind.fixed, value: 8),
-    ExtraTemplate(id: 'e-express', name: 'Ekspresno (48 h)', kind: ExtraKind.percent, value: 30),
-    ExtraTemplate(id: 'e-popust-stalna', name: 'Popust – stalna stranka', kind: ExtraKind.percent, value: -10),
-    ExtraTemplate(id: 'e-popust-kolicina', name: 'Popust – večja količina', kind: ExtraKind.percent, value: -5),
+    // Doplačila, usklajena z dejanskim delom (QA v4 §4).
+    ExtraTemplate(id: 'e-urin', name: 'Urin', kind: ExtraKind.perM2, value: 3),
+    ExtraTemplate(id: 'e-dlake', name: 'Dlake', kind: ExtraKind.fixed, value: 5, choices: [5, 10]),
+    ExtraTemplate(id: 'e-pranje', name: 'Ponovno pranje', kind: ExtraKind.percent, value: 30),
+    ExtraTemplate(id: 'e-vnos', name: 'Vnos', kind: ExtraKind.fixed, value: 5),
+    ExtraTemplate(id: 'e-iznos', name: 'Iznos', kind: ExtraKind.fixed, value: 5),
   ];
 
   final customers = [
@@ -120,10 +123,11 @@ AppState buildSeedState() {
         note: note,
       );
 
-  // -------------------------------------------------- #1847 primer iz koncepta
-  // Novak ima 3 kose: dva sta READY, tretji je še v sušilnici.
+  // -------------------------------------------------- LJ-005 primer iz koncepta
+  // Novak ima 3 kose: dva sta pripravljena, tretji je še v sušilnici.
   orders.add(WorkOrder(
-    id: '1847',
+    id: 'LJ-005',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.dropoff,
     handover: HandoverMode.customerCollects,
     status: OrderStatus.inProduction,
@@ -139,8 +143,8 @@ AppState buildSeedState() {
   ));
   items.addAll([
     RugItem(
-      id: '1847-1',
-      orderId: '1847',
+      id: 'LJ-005-1',
+      orderId: 'LJ-005',
       index: 1,
       ofTotal: 3,
       status: RugStatus.ready,
@@ -163,8 +167,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1847-2',
-      orderId: '1847',
+      id: 'LJ-005-2',
+      orderId: 'LJ-005',
       index: 2,
       ofTotal: 3,
       status: RugStatus.ready,
@@ -183,8 +187,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1847-3',
-      orderId: '1847',
+      id: 'LJ-005-3',
+      orderId: 'LJ-005',
       index: 3,
       ofTotal: 3,
       status: RugStatus.drying,
@@ -195,9 +199,10 @@ AppState buildSeedState() {
     ),
   ]);
 
-  // ------------------------------------------- #1844 vse gotovo, čaka stranko
+  // ------------------------------------------- LJ-002 vse gotovo, čaka stranko
   orders.add(WorkOrder(
-    id: '1844',
+    id: 'LJ-002',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.dropoff,
     handover: HandoverMode.customerCollects,
     status: OrderStatus.awaitingCollection,
@@ -213,15 +218,15 @@ AppState buildSeedState() {
   ));
   items.addAll([
     RugItem(
-      id: '1844-1',
-      orderId: '1844',
+      id: 'LJ-002-1',
+      orderId: 'LJ-002',
       index: 1,
       ofTotal: 2,
       status: RugStatus.ready,
       widthCm: 140,
       lengthCm: 200,
       rugTypeId: 't-shaggy',
-      rugTypeName: 'Shaggy / visoki flor',
+      rugTypeName: 'Shaggy / kosmati-debelejši',
       pricePerM2: 16,
       minChargeM2: 3,
       confirmedPrice: 44.80,
@@ -233,8 +238,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1844-2',
-      orderId: '1844',
+      id: 'LJ-002-2',
+      orderId: 'LJ-002',
       index: 2,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -254,9 +259,10 @@ AppState buildSeedState() {
     ),
   ]);
 
-  // ------------------------------------------------ #1845 dostava, za vračilo
+  // ------------------------------------------------ LJ-003 dostava, za vračilo
   orders.add(WorkOrder(
-    id: '1845',
+    id: 'LJ-003',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.delivery,
     handover: HandoverMode.weDeliver,
     status: OrderStatus.awaitingDelivery,
@@ -275,8 +281,8 @@ AppState buildSeedState() {
   ));
   items.addAll([
     RugItem(
-      id: '1845-1',
-      orderId: '1845',
+      id: 'LJ-003-1',
+      orderId: 'LJ-003',
       index: 1,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -300,8 +306,8 @@ AppState buildSeedState() {
       ],
     ),
     RugItem(
-      id: '1845-2',
-      orderId: '1845',
+      id: 'LJ-003-2',
+      orderId: 'LJ-003',
       index: 2,
       ofTotal: 2,
       status: RugStatus.ready,
@@ -322,9 +328,10 @@ AppState buildSeedState() {
     ),
   ]);
 
-  // ------------------------------------------------------ #1846 B2B v obdelavi
+  // ------------------------------------------------------ LJ-004 B2B v obdelavi
   orders.add(WorkOrder(
-    id: '1846',
+    id: 'LJ-004',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.b2b,
     handover: HandoverMode.weDeliver,
     status: OrderStatus.inProduction,
@@ -343,8 +350,8 @@ AppState buildSeedState() {
   for (var n = 1; n <= 4; n++) {
     final done = n <= 2;
     items.add(RugItem(
-      id: '1846-$n',
-      orderId: '1846',
+      id: 'LJ-004-$n',
+      orderId: 'LJ-004',
       index: n,
       ofTotal: 4,
       status: done ? RugStatus.ready : (n == 3 ? RugStatus.drying : RugStatus.awaitingWash),
@@ -366,9 +373,10 @@ AppState buildSeedState() {
     ));
   }
 
-  // ------------------------------------------------- #1848 jutrišnji prevzem
+  // ------------------------------------------------- LJ-006 jutrišnji prevzem
   orders.add(WorkOrder(
-    id: '1848',
+    id: 'LJ-006',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.delivery,
     handover: HandoverMode.weDeliver,
     status: OrderStatus.scheduledPickup,
@@ -385,8 +393,8 @@ AppState buildSeedState() {
   ));
   for (var n = 1; n <= 5; n++) {
     items.add(RugItem(
-      id: '1848-$n',
-      orderId: '1848',
+      id: 'LJ-006-$n',
+      orderId: 'LJ-006',
       index: n,
       ofTotal: 5,
       status: RugStatus.awaitingPickup,
@@ -394,9 +402,10 @@ AppState buildSeedState() {
     ));
   }
 
-  // ------------------------------------------ #1842 zaključeno, s podpisom
+  // ------------------------------------------ LJ-001 zaključeno, s podpisom
   orders.add(WorkOrder(
-    id: '1842',
+    id: 'LJ-001',
+    location: OrderLocation.ljubljana,
     channel: OrderChannel.dropoff,
     handover: HandoverMode.customerCollects,
     status: OrderStatus.completed,
@@ -413,7 +422,7 @@ AppState buildSeedState() {
       returnedAt: day(-33, 17, 10),
       userId: 'u-marko',
       userName: 'Marko',
-      scannedItemIds: const ['1842-1'],
+      scannedItemIds: const ['LJ-001-1'],
       receivedByName: 'Janez Novak',
       signatureBase64: null,
       overrideReason: 'Demo podatek – podpis ni bil zajet.',
@@ -421,8 +430,8 @@ AppState buildSeedState() {
     ),
   ));
   items.add(RugItem(
-    id: '1842-1',
-    orderId: '1842',
+    id: 'LJ-001-1',
+    orderId: 'LJ-001',
     index: 1,
     ofTotal: 1,
     status: RugStatus.returned,
@@ -450,6 +459,9 @@ AppState buildSeedState() {
     extraTemplates: extras,
     users: users,
     currentUserId: null,
-    nextOrderNumber: 1849,
+    nextOrderSeqLjubljana: 7,
+    nextOrderSeqMaribor: 1,
+    nextOrderSeqCelje: 1,
+    nextOrderSeqDolenjska: 1,
   );
 }

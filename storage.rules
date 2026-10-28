@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Tu so podpisi strank ob vračilu (signatures/{orderId}.png) — osebni
+// podatek in hkrati edini dokaz, da so bile preproge vrnjene.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Brati sme vsak prijavljen zaposleni (podpis se pokaže na naročilu).
+    // Ustvarjanje in popravljanje prav tako — vračilo lahko izvede
+    // kdorkoli od zaposlenih.
+    //
+    // `delete` namenoma NI podeljen: dokazila o vračilu se ne smejo
+    // izgubiti, tudi po pomoti ne. Pravila se seštevajo (če karkoli
+    // dovoli, je dovoljeno), zato tu ne smemo napisati `write` — ta
+    // vključuje tudi brisanje in bi ga tiho dovolil.
+    match /signatures/{file} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+    }
+
+    // Vse ostalo je zaprto — druge poti aplikacija ne uporablja.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

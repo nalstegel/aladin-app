@@ -1,0 +1,1088 @@
+# Aladin — Project Plan & Continuation Guide
+
+> **Read this whole file before touching code.** It is written so an AI agent
+> (or a human) opening this directory cold, with zero prior conversation
+> history, can understand what this app is, why it's built the way it is, and
+> exactly what to do next. If you are an AI agent: after reading this, also
+> skim `README.md` (user-facing docs) and `lib/data/repository.dart` (the
+> single source of truth for business logic) before making changes.
+
+## 1. What this app is
+
+**Aladin** is an internal operations app for a carpet-cleaning business
+(Slovenian company). It is used **only by employees** (washers, front-desk
+staff, drivers, admin) — never by customers. It replaces paper logs for:
+
+- tracking pickups/deliveries by day (was a handwritten sheet)
+- tracking each individual rug through wash → dry → measure/price → ready
+- proving to a customer, with a signature, that their rugs were actually
+  returned (the business had disputes about this before)
+
+The original spec (in Slovenian, from the business owner) is preserved
+verbatim at the bottom of this file in **Section 6**, because it is the
+ground truth for *why* the data model and screens are shaped the way they
+are. If any future requirement seems ambiguous, re-read Section 6 first.
+
+### Core domain concept (do not violate this when extending the app)
+
+An **order** (`WorkOrder`) is a bundle of one or more **rug items**
+(`RugItem`). Each rug item:
+
+- has its own ID like `LJ-001-2` (order id `LJ-001`, piece 2) — this exact
+  string is also the QR code payload printed on its label. Order ids are
+  per-location sequences (`LJ-`/`MB-` + zero-padded counter, see
+  `lib/core/order_id.dart` and §4.7) chosen when the order is created and
+  never changed afterward.
+- moves through its own status independently:
+  `awaitingPickup → awaitingWash → drying → finishing → ready → returned`
+- **an order's status is NEVER set directly.** It is always *derived* from
+  the statuses of its items. See `Repository._recompute()` in
+  `lib/data/repository.dart` — this is the one function that decides order
+  status, and it runs after every item mutation. If you add a new rug
+  status or a new order status, this function must be updated, and it is the
+  only place that should ever set `order.status`.
+
+This "status is derived, not set" rule is the single most important
+invariant in the codebase. Every UI action (advance, measure, finish,
+override) goes through `Repository` methods that end by calling
+`_recompute()`. Never add code elsewhere that sets `WorkOrder.status`
+directly.
+
+## 2. Tech stack and why
+
+- **Flutter** (chosen over React Native / native — user asked "is Flutter a
+  good idea?" and this was confirmed). One codebase for Android + iOS.
+- **Riverpod** (`flutter_riverpod`) for state. `lib/data/repository.dart` is
+  a `StateNotifier<AppState>`; all providers in `lib/data/providers.dart`
+  derive from it.
+- **mobile_scanner** for QR scanning (MLKit-backed, works well on both
+  platforms).
+- **signature** package for the finger-signature capture on return.
+- **qr_flutter** for on-screen QR previews.
+- Rug labels print directly to a **Zebra ZD230** thermal printer on the shop
+  LAN: `lib/core/zpl.dart` builds raw ZPL, `lib/data/zebra_printer.dart` sends
+  it over a plain TCP socket to port 9100 (no vendor SDK/plugin needed, same
+  code on Android/iOS). Printer IP is a per-device setting (Nastavitve →
+  Tiskalnik). Replaced the earlier A4 PDF/AirPrint flow (`pdf` + `printing`
+  packages, now removed) — see 4.6.
+- **Firebase (Firestore + Storage)** is the live backend as of 2026-08-26
+  (`lib/data/store.dart` → `FirestoreStore`). `LocalStore` (JSON on device)
+  still exists in the same file but is no longer wired up. See Section 4.1
+  for exactly what is and isn't done.
+
+Flutter SDK was cloned to `~/development/flutter` on the original dev
+machine (not installed via a package manager) because Flutter wasn't
+preinstalled. **On a new PC, check whether `flutter` is on PATH; if not,
+either install it normally or clone stable branch as was done before:**
+```bash
+git clone --depth 1 -b stable https://github.com/flutter/flutter.git ~/development/flutter
+export PATH="$HOME/development/flutter/bin:$PATH"
+```
+Android Studio + Android SDK + an emulator (`Resizable_Experimental` AVD) was
+used for testing since **Xcode is NOT installed** on the original dev
+machine (only Command Line Tools). iOS has never been built or tested —
+only prepared for (see Section 3).
+
+## 3. Current status: what is DONE
+
+The app is a **fully working, locally-persisted prototype**. It has been
+manually tested end-to-end on an Android emulator by simulating a real
+worker's day: creating an order, scanning through wash/dry, entering
+measurements, applying extras/discounts, confirming price, scanning all
+items back at return time, and signing.
+
+### Done — data model (`lib/models/`)
+- `enums.dart` — `OrderChannel` (delivery/dropoff/b2b), `HandoverMode`,
+  `OrderStatus`, `RugStatus`, `ExtraKind`, `CustomerType`, `UserRole`. All
+  have Slovenian `.label` extensions.
+- `customer.dart` — private person or company (B2B), with
+  `defaultDiscountPercent` that auto-suggests at pricing time.
+- `app_user.dart` — employee (worker/admin), used for "who did this scan".
+- `catalog.dart` — `RugType` (price per m², min charge m²) and
+  `ExtraTemplate` (named surcharge/discount: percent / per-m² / fixed).
+  `AppliedExtra` is the snapshot actually attached to a rug item.
+- `rug_item.dart` — the core entity. Computes `m2`, `chargeableM2` (respects
+  min charge), `basePrice`, `extrasTotal`, `discountAmount`,
+  `computedPrice`, `price` (uses `confirmedPrice` once set). Has `history:
+  List<StatusEvent>` for full audit trail.
+- `order.dart` (`WorkOrder`) — bundles items, tracks channel, handover mode,
+  pickup/delivery/due dates, `returnProof`.
+- `return_proof.dart` — the return fail-safe record: timestamp, employee,
+  scanned item IDs, signature (base64 PNG), receiver name, or an admin
+  override reason if no signature was possible.
+- `status_event.dart` — one history entry (status, timestamp, user, note).
+
+### Done — business logic (`lib/data/`)
+- `app_state.dart` — immutable snapshot of everything (customers, orders,
+  items, catalogs, users, `nextOrderNumber`). Has convenience lookups
+  (`order(id)`, `itemsOf(orderId)`, `readyCount`, `orderTotal`, etc).
+- `repository.dart` — **all mutations go through here.** Key methods:
+  `createOrder` (also generates all `RugItem`s + QR IDs at once),
+  `addItemToOrder`, `markOrderPickedUp`, `advance` (simple one-step
+  transitions), `setMeasurements` (dry→finishing step, snapshots rug type
+  price/min-charge onto the item), `finishItem` (applies extras/discount,
+  confirms price, → ready), `sendBackToWash` (re-wash, clears confirmed
+  price), `overrideStatus` (admin manual fix), `completeReturn` (writes
+  `ReturnProof`, marks items `returned`, order `completed`). Ends every
+  mutation with `_recompute()`.
+- `store.dart` — `DataStore` **abstract interface** with two
+  implementations: `InMemoryStore` (used by tests) and `LocalStore` (writes
+  JSON to app documents directory via `path_provider`). **This is the
+  abstraction point for the Firebase migration — see Section 4.**
+- `seed.dart` — demo data matching the original spec's example (order
+  `#1847`, customer Janez Novak, 3 items, 2 ready + 1 drying), plus several
+  other orders covering every channel/status combination, and a full
+  catalog (5 rug types, 8 extra templates), 3 demo users (Nal=admin,
+  Marko/Ana=workers).
+- `providers.dart` — Riverpod providers: `repositoryProvider`,
+  `bootstrapProvider` (loads persisted state or seeds on first run),
+  `currentUserProvider`, channel/status-filtered order lists for the
+  dashboard, `productionCountsProvider`, `overdueOrdersProvider`, etc.
+
+### Done — UI (`lib/ui/`)
+- `login_screen.dart` — email + password sign-in (replaced the old
+  `user_picker_screen.dart`, which was deleted — see Section 4.2).
+- `shell.dart` — bottom nav: Danes (Today) / Naročila (Orders) / **big
+  center QR scan button** / Stranke (Customers) / Več (Settings/More).
+- `dashboard/dashboard_screen.dart` — "Today" view: production counts
+  (waiting-wash / drying / finishing / ready), overdue orders, today's
+  pickups, today's deliveries, awaiting-in-store collections. This replaces
+  the paper sheet mentioned in the spec.
+- `orders/` — `orders_screen.dart` (3 channel tabs, each with
+  active/ready/history filter chips), `order_card.dart`, `new_order_screen.dart`
+  (channel + customer search/create + item count + dates + handover mode),
+  `order_detail_screen.dart` (full order view, per-item rows, totals,
+  return-proof display), `labels_screen.dart` (QR label grid preview +
+  print to Zebra ZD230 via raw ZPL/TCP), `return_flow_screen.dart` (the
+  fail-safe: must scan every item before "POTRDI VRAČILO" appears),
+  `signature_screen.dart` (finger signature + statement text + receiver
+  name).
+- `rugs/` — `rug_detail_screen.dart` (single item view — this is what
+  opens when you scan a QR in "open item" mode; shows status, pricing
+  breakdown, full history, the QR itself, and the relevant next-step
+  button), `measure_sheet.dart` (width×length or manual m² + rug type
+  picker + live price preview), `finish_sheet.dart` (extras checklist +
+  discount + manual price override + final confirm → READY).
+- `scanner/scanner_screen.dart` — camera QR scanner with two modes: "Odpri
+  kos" (open item detail) and "Hitri način" (quick mode — each scan
+  auto-advances the item one step, for working at the machine without
+  touching the screen).
+- `customers/` — `customers_screen.dart` (searchable list, filter by
+  private/company), `customer_detail_screen.dart` (auto-built CRM: lifetime
+  stats, active orders, history), `customer_form.dart`.
+- `settings/settings_screen.dart` — signed-in employee + sign out,
+  revenue/order stats, rug type price list editor, extra template editor,
+  employee list (admins can edit roles/access there), and an admin-only
+  "reset to demo data" button. That reset wipes the **shared** database for
+  every employee, not just this phone, so it asks for typed confirmation.
+- `widgets/common.dart` — shared components: `StatusChip`, `ReadyProgress`
+  (the "2/3 READY" bar), `SectionHeader`, `EmptyState`, `StatTile`,
+  `DetailRow`, `AppCard`.
+
+### Done — theming & formatting
+- `core/theme.dart` — `AppColors` (fixed color per status, so workers
+  recognize state by color without reading), `AppIcons`, full
+  `ThemeData`.
+- `core/format.dart` — `Fmt` class: Slovenian date/time formatting,
+  `Fmt.money`, `Fmt.m2`, `Fmt.dimensions`, `Fmt.dayHeader` (danes/jutri/
+  weekday name), `Fmt.pieces(n)` (correct Slovenian plural: kos/kosa/kosi/
+  kosov).
+
+### Done — tests
+`test/production_flow_test.dart` — 6 tests covering: full order lifecycle
+to completion, delivery channel → awaiting-delivery transition, min-charge
+area rounding up price, extras+discount math, return proof completion,
+re-wash invalidating confirmed price.
+`test/sync_test.dart` — 3 tests covering live sync between devices (4.1).
+`test/auth_binding_test.dart` — 7 tests covering account binding and role
+management (4.2). **All 16 passing.** Run with:
+```bash
+flutter test
+```
+
+### Done — platform prep
+- Android: `applicationId "si.aladin.aladin"`, camera permission via the
+  `mobile_scanner` plugin's own manifest merge (no extra permission needed
+  in app manifest — verify this is still true if the plugin version
+  changes).
+- iOS: `NSCameraUsageDescription` added to `ios/Runner/Info.plist`
+  ("Kamera se uporablja za skeniranje QR etiket na preprogah."). **iOS has
+  never actually been built or run** — no Xcode on the original dev
+  machine. Bundle ID is `si.aladin.aladin`.
+
+### Verified working (manual test on Android emulator)
+Full walkthrough was done and screenshotted: login as employee → dashboard
+→ orders tab → order #1847 detail → open rug 1847-3 → measure (250×350cm,
+Perzija type → 8.75m² × 22€/m² = 192.50€ base) → finish (added
+"Odstranjevanje madežev" +20% → 231.00€) → confirmed READY → order
+auto-flipped to "Čaka na prevzem" (2/3→3/3) → opened return flow → all 3
+items required before POTRDI VRAČILO appeared → signature screen → order
+completed → return proof (timestamp, employee, receiver name, signature
+image) displayed correctly on order detail. Two UI bugs found during this
+walkthrough were fixed (tab overflow on "Osebni prevzem" label; long
+`DetailRow` labels overlapping values) — both already fixed in current
+code.
+
+## 4. What is NOT done yet — prioritized
+
+### 4.1 — Firebase backend — MOSTLY DONE (2026-08-26)
+
+Firebase project `aladin-app-d9427` is live and the app writes to it.
+Verified on a real Android phone (Samsung SM A725F): first launch seeded
+all collections into Firestore successfully.
+
+**Done:**
+- `flutterfire configure` run for **Android only** (see iOS caveat below).
+  Generated `lib/firebase_options.dart`, `android/app/google-services.json`,
+  and updated the Android Gradle files.
+- Packages added: `firebase_core`, `cloud_firestore`, `firebase_storage`.
+- `Firebase.initializeApp()` wired into `lib/main.dart`.
+- `FirestoreStore implements DataStore` written in `lib/data/store.dart`.
+  Collections: `customers`, `orders`, `items`, `rugTypes`,
+  `extraTemplates`, `users`, plus a `meta/counters` doc holding
+  `nextOrderNumber`. It diffs against the last saved `AppState` and writes
+  only changed documents in a batch, so one item scan does not rewrite the
+  whole database. `Repository` and all UI files were left untouched, as
+  the abstraction intends.
+- `storeProvider` in `lib/data/providers.dart` now returns `FirestoreStore()`
+  instead of `LocalStore()`. `LocalStore` is still in the file, unused, as
+  a working reference implementation.
+- Signatures upload to Firebase Storage at `signatures/{orderId}.png`;
+  `ReturnProof` gained a `signatureUrl` field and the Firestore document
+  no longer carries the inline base64 PNG. `order_detail_screen.dart`
+  prefers the URL and falls back to base64 for older records.
+- Firestore + Storage security rules exist as `firestore.rules` /
+  `storage.rules`, wired through `firebase.json` and `.firebaserc`, and
+  deployed with `firebase deploy --only firestore:rules,storage`.
+
+**Deliberate design decision — do not "fix" this without thinking:**
+`currentUserId` (which employee is signed in on THIS phone) is **not**
+synced to Firestore. It is stored per-device via `SharedPreferences`.
+Syncing it would mean one employee picking their name on their phone
+silently changes who is logged in on everyone else's phone.
+
+**Real-time sync — DONE in code, NOT yet verified on two phones:**
+`DataStore` gained `Stream<AppState> watch()`. `FirestoreStore.watch()`
+opens a snapshot listener on all six collections plus `meta/counters` and
+emits a combined `AppState` whenever any of them changes; stores that
+cannot sync (`InMemoryStore`, `LocalStore`) return an empty stream and the
+app behaves exactly as before. `Repository.init()` subscribes to it and
+`dispose()` cancels it.
+
+Two things in that code are load-bearing — read before changing it:
+- The listener assigns `state` **directly and never calls `_commit`**. Going
+  through `_commit` would save every received snapshot straight back to
+  Firestore, and the phones would bounce writes off each other forever.
+- The received state is merged as
+  `remote.copyWith(currentUserId: state.currentUserId)`. Firestore never
+  carries `currentUserId`, so without that merge every incoming snapshot
+  would log the employee out and bounce them to the user picker.
+
+`test/sync_test.dart` covers all three behaviours (remote change lands,
+local user survives, no write-back loop) using a fake store. Worst-case
+failure mode of the save-diffing under concurrent updates is a redundant
+write, never a lost one.
+
+**Still open under 4.1:**
+1. **Sync has only been tested against a fake store, never two real
+   phones.** Install on a second device and confirm a status change on one
+   appears on the other within a second or two, without restarting.
+2. **The signature → Storage upload path has never actually run.** It is
+   written and compiles, but no return flow has been completed against
+   live Firebase yet. Test a full return + signature and confirm the PNG
+   appears in the Storage bucket and renders on the order detail screen.
+3. Security rules — now written to require sign-in, see 4.2. **They still
+   need deploying**, and the wide-open ones are live until then.
+4. **iOS is not configured.** `flutterfire configure` crashed on the iOS
+   step (`cannot load such file -- xcodeproj`) because the Ruby gem is
+   missing and there is no Xcode on this machine. The iOS app IS
+   registered in the Firebase console and `ios/Runner/GoogleService-Info.plist`
+   was written, but it is not referenced from the Xcode project and
+   `firebase_options.dart` throws `UnsupportedError` for iOS. Re-run
+   `flutterfire configure` on a Mac with full Xcode to finish it.
+5. `firebase_auth` is back in and building. It had failed with
+   `:firebase_auth:compileDebugKotlin` → "Type annotation class
+   `UnknownInitialization` is inaccessible". Fixed in
+   `android/build.gradle.kts` by adding `checker-qual` as a `compileOnly`
+   dependency to every Android library subproject. **Don't delete that
+   block** — the build breaks again without it.
+6. Firestore's offline persistence is on by default on mobile — the wash
+   room has no signal, so do NOT disable it.
+
+### 4.2 — Real authentication — DONE in code (2026-08-26)
+
+Decision made by the owner: **email + password, one account per employee.**
+`UserPickerScreen` (tap any name to become them) is **deleted** — do not
+bring it back, it made the "who did this scan" audit trail meaningless.
+
+- `lib/data/auth.dart` — `AuthService` (sign in, sign out, password reset)
+  with Firebase's error codes translated to Slovenian, plus
+  `authStateProvider`. Firebase persists the session per device, so an
+  employee signs in once per phone.
+- `lib/ui/login_screen.dart` — email + password form.
+- `lib/main.dart` — `_AuthGate` (signed in?) wraps `_DataGate` (data
+  loaded + account bound to an employee record) wraps `AppShell`.
+- `Repository.bindAuthUser()` — links the Firebase UID to an `AppUser`.
+  **`AppUser.id` is now the Firebase UID**, so item history points at a
+  real account. `AppUser` gained an `email` field.
+- **New accounts are always created as `worker`.** Nobody may assign
+  themselves a role: an earlier draft made the first account admin
+  automatically, which meant the rules had to permit self-assigned roles —
+  and anyone could then have set `role: 'admin'` on themselves with a
+  hand-written Firebase client and gained the right to wipe the database.
+  See the bootstrap step in "Still to do" below.
+- Admins manage everyone else in Nastavitve → Zaposleni (name, role,
+  access). Employees are never deleted — item history hangs off them — they
+  are deactivated with `active: false`.
+- `Repository` no longer stores `currentUserId` anywhere itself, and
+  `FirestoreStore` no longer keeps it in `SharedPreferences` — Firebase
+  Auth is the single source of truth for who is signed in on a device.
+- Settings: "Zamenjaj" (switch user) replaced by "Odjava" (sign out).
+- `test/auth_binding_test.dart` — 7 tests: new accounts are workers,
+  admin can change role/access, re-login doesn't overwrite an assigned
+  role, re-login doesn't duplicate, name derived from email, history
+  attributed to the account, sign-out clears.
+
+**Security rules are now closed** (`firestore.rules`, `storage.rules`):
+everything requires `request.auth != null`. Three deliberate details, each
+guarding against a specific hole:
+- On `users/{uid}`, self-`create` is allowed **only with `role: 'worker'`**
+  and self-`update` **only if `role` and `active` are unchanged**. Otherwise
+  any employee could promote themselves to admin.
+- Admins may write any user document; this is checked with a `get()` on the
+  requester's own user doc. That costs one extra read per user write, which
+  is fine because role changes are rare.
+- Storage grants `create, update` but **not** `delete` on signatures.
+  Rules are a permissive union, so writing `write` would have silently
+  re-allowed deleting the only proof a delivery happened.
+
+**Still to do for 4.2 — in this order:**
+1. **Enable Email/Password** in the Firebase console (Authentication →
+   Sign-in method) and **create an account per employee** there. There is
+   deliberately no self-registration in the app.
+2. **Deploy the rules** — until then the wide-open ones are still live:
+   `firebase deploy --only firestore:rules,storage`
+3. **Bootstrap the first admin by hand.** Sign in once in the app so the
+   `users/{uid}` document is created, then in the Firestore console edit
+   that document and set `role` to `admin`. Only after this can anyone use
+   Nastavitve → Zaposleni to manage the rest. Skipping this leaves the
+   company with no admin and no way to appoint one.
+4. Never run on a real device — the whole login → bind → shell path is
+   unverified.
+5. The seeded demo employees (`u-nal`, `u-marko`, `u-ana`) still exist with
+   no account attached. Harmless, but tidy them up before going live.
+6. Beyond the user documents, roles are enforced only in the UI (the
+   reset-data button is admin-only). If e.g. only admins should edit the
+   price list, add that to `firestore.rules` too — hiding a button is not
+   access control.
+
+### 4.3 — Distribution (no App Store / Play Store)
+Business owner explicitly does NOT want to publish to public stores (this
+was discussed at length in this conversation — see chat history if
+available, otherwise re-derive from first principles below).
+
+#### Android — build side DONE (2026-08-26), setup steps left for the owner
+
+Release builds are wired up and a signed-release build has been verified to
+compile with R8 minification on (the usual place release builds break).
+
+- `android/app/build.gradle.kts` reads `android/key.properties` (gitignored)
+  and signs with it. **If that file is missing it falls back to the debug
+  key and prints a warning** — handy for `flutter run --release`, but such
+  an APK must never reach employees: Android refuses to upgrade an install
+  when the signing certificate changes, so they'd have to uninstall (losing
+  nothing, since data is in Firestore, but it's avoidable friction).
+- `android/app/proguard-rules.pro` keeps the Firebase and MLKit classes
+  that are loaded by reflection. Without these, a release build compiles
+  fine and then **silently fails at runtime** — QR scanning is the first
+  thing to break. Do not trim this file casually.
+- `tool/release_android.sh "opis sprememb"` builds and uploads to App
+  Distribution. It refuses to run without a keystore, and re-verifies with
+  `apksigner` that the output isn't debug-signed before uploading.
+- It builds `--target-platform android-arm64` only: ~30 MB instead of the
+  ~75 MB universal APK. Every phone from the last several years is arm64.
+  If a genuinely old 32-bit device ever needs it, drop that flag.
+
+**Owner's one-time setup, in order:**
+1. Generate the keystore (choose your own passwords — never commit them):
+   ```bash
+   keytool -genkey -v -keystore ~/keys/aladin-release.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 -alias aladin
+   ```
+   **Back this file and its passwords up somewhere safe and permanent.**
+   Losing it means no existing install can ever be updated again — every
+   employee would have to uninstall and reinstall.
+2. Create `android/key.properties` (already gitignored):
+   ```
+   storePassword=<geslo>
+   keyPassword=<geslo>
+   keyAlias=aladin
+   storeFile=/Users/<ti>/keys/aladin-release.jks
+   ```
+3. In the Firebase console, enable **App Distribution** and create a tester
+   group named `zaposleni`, adding each employee's email.
+4. Bump the build number in `pubspec.yaml` (`1.0.0+1` → `1.0.0+2`) for
+   every release — App Distribution treats an unchanged build number as
+   the same release.
+5. Run `./tool/release_android.sh "kaj je novega"`.
+- **iOS**: no sideloading equivalent exists (Apple hard-blocks unsigned
+  apps at the OS level — not a setting that can be toggled). Options
+  discussed:
+  - **TestFlight** (requires $99/year Apple Developer Program): internal
+    testers (up to 100), no UDID collection needed, but each build
+    **expires after 90 days** — needs a new build uploaded periodically
+    (can literally just bump the build number with zero code changes to
+    reset the 90-day clock; version stays e.g. `1.0.0+1` → `1.0.0+2`).
+  - **Ad Hoc distribution** (same $99/year): requires collecting each
+    iPhone's UDID into the provisioning profile once, but the resulting
+    `.ipa` can be installed via a direct link (no TestFlight, no 90-day
+    limit) and the profile lasts a full year.
+  - Enterprise Program ($299/yr, needs 100+ employees) and the EU web
+    distribution route are NOT viable for a 5-person business — ruled out.
+  - **This decision (TestFlight vs Ad Hoc) has not been finalized by the
+    owner yet.** Either requires an Apple Developer account, which
+    requires the owner's own Apple ID — cannot be set up by an agent.
+- Building for iOS at all requires a Mac with **Xcode installed** (not
+  just Command Line Tools, which is all that's on the original dev
+  machine). This must happen on a Mac that has Xcode before any iOS work
+  can proceed.
+
+### 4.4 — UI/UX prenova po predlogi — DONE (2026-08-29)
+
+Lastnik je dostavil predlogo petih zaslonov (Danes, Naročila, Skeniraj,
+Stranke, Več). Prenova ni bila samo kozmetična — trije od petih zaslonov so
+dobili drugačno strukturo. Odločitve, sprejete ob predaji predloge:
+
+**Oblikovni sistem**
+- Pisava **Inter**, priložena v `assets/fonts/` (~2 MB). Namenoma ni prek
+  `google_fonts`, ki jo prenese ob prvem zagonu — v pralnici ni zanesljivega
+  signala.
+- Ikone ostajajo Material Symbols, obarvane po statusu. Pravilo "ena barva na
+  status" iz `core/theme.dart` je ostalo nedotaknjeno.
+- `AppCard` ima zdaj `accent` — barvni trak ob levem robu.
+
+**Preimenovanja statusov** (`models/enums.dart`, en sam vir):
+`READY → Pripravljeno`, `Čaka na pranje → Na pranju`, `Sušenje → V sušenju`,
+`Končna obdelava → Mere in cena`, `Osebni prevzem → Pripeljano`.
+`Vrnjeno` je **namenoma ostalo** — predloga je pisala "Vračano", kar se bere
+kot postopek v teku, status pa pomeni, da je preproga že vrnjena.
+
+**Danes**
+- Pet ploščic namesto štirih: Prevzem / Vračilo / Sušenje / **Mere in cena** /
+  Zamude, v dveh vrstah. Peta je dodana zato, ker so bližnjice pod skenerjem
+  ostale pri petih korakih brez `finishing` — brez te ploščice do čakalne
+  vrste za merjenje ne bi vodilo nič.
+- Ploščice so klikljive: skočijo na razdelek ali odprejo delovni seznam.
+- Kartice imajo gumb: **Prevzemi** izvede prevzem z enim dotikom, **Vrni**
+  pa samo odpre postopek vračila — nikoli ga ne izvede. Varovalka
+  "poskeniraj vse kose + podpis" ostaja edina pot do zaključka.
+
+**Naročila**
+- Trije kanalski zavihki so zamenjani z dvema (Aktivna / Zaključena). Kanal je
+  zdaj oznaka na kartici, filtrira pa se prek ikone v glavi (kanal + korak).
+- Napredek na kartici meri korak, v katerem obtiči največ kosov — "3/8
+  oprano", ne "5/8 na pranju". Logika je v `StageProgress` v
+  `ui/widgets/common.dart`, pokrita s `test/stage_progress_test.dart`.
+- FAB "Novo naročilo" je ostal; v predlogi ga ni bilo, druge poti do sprejema
+  naročila pa ni. `NewOrderScreen.initialChannel` je zdaj neobvezen.
+
+**Skeniraj**
+- Zdaj je pravi zavihek z **živo kamero**, ne več potisnjen zaslon. Kamera
+  teče samo, kadar je zavihek izbran (`ScannerScreen.active`) — sicer bi
+  praznila baterijo ves čas.
+- Pet bližnjic pod okvirjem odpre **delovne sezname** kosov v tem statusu.
+  Ne nastavljajo statusa.
+- Nov **ročni vnos kode** za strgane etikete.
+- **Hitri način je ostal.** V predlogi zanj ni bilo gumba, a je edini razlog,
+  da je skeniranje ob stroju hitro — brisanje bi upočasnilo delo v obratu.
+- Celozaslonski skener živi naprej kot `ScanCaptureScreen`, ker ga postopek
+  vračila potrebuje.
+
+**Več**
+- Iz enega dolgega zaslona nastal razdelilnik z desetimi vrsticami.
+  `ui/settings/settings_screen.dart` je izbrisan, vsebina razdeljena v
+  `ui/more/`.
+- **Uporabniki** vsebuje tudi lastni račun in **Odjavo** (v predlogi ju ni
+  bilo nikjer).
+- **Zaključena naročila** skoči na zavihek v Naročilih (prek
+  `data/navigation.dart`), namesto da bi isti seznam obstajal dvakrat.
+- **Varnostne kopije** so **samo pregled stanja, brez izvoza.** Izvožena
+  datoteka bi vsebovala imena, telefone in naslove vseh strank in bi v
+  trenutku deljenja zapustila varnostna pravila. Razlog je zapisan tudi
+  na samem zaslonu.
+- **Podpora** nima vpisanih kontaktov — v projektu jih ni nikjer. Zaslon to
+  odkrito pove; vrednosti so na vrhu
+  `ui/more/support_screen.dart` (`_supportPhone`, `_supportEmail`).
+  **To je edina stvar iz prenove, ki čaka na lastnika.**
+
+**Obvestila — koda narejena, storitev ne deluje**
+Zvonček na Danes dela že zdaj: obvestila izpelje iz podatkov v bazi
+(`data/alerts.dart`), prebrana pa hrani po napravi. Potisna obvestila so
+napisana (`data/push.dart`, `functions/index.js`), a **ne delujejo, dokler
+lastnik ne opravi korakov v `functions/README.md`** — vklop Cloud Messaging,
+preklop na Blaze, `firebase deploy --only functions`. Na iOS so blokirana
+še z Apple Developer računom in APNs ključem.
+
+### 4.5 — Nice-to-have, not urgent
+- SMS/email confirmation to customer after return (spec mentions this as
+  "po želji" / optional). Needs a third-party service (Twilio/SendGrid or
+  similar) and the owner's account — not started, low priority.
+- Admin UI polish for catalog/employee management is minimal but
+  functional; could be expanded if the owner wants more control without
+  code changes.
+
+### 4.6 — Zebra ZD230 label printing — DONE in code, UNVERIFIED on real hardware (2026-09-17)
+Replaced the A4 PDF label sheet with direct thermal printing on a Zebra
+ZD230 that lives on the shop's LAN. Implementation:
+- **SUPERSEDED (2026-10-21, see §4.11): the label is LANDSCAPE 60×40 mm, not
+  portrait — a photo of a real print proved it. The paragraph below is the
+  old history.**
+- `lib/core/zpl.dart` — pure ZPL template builder (`buildLabelZpl`), no I/O,
+  easy to unit-test. Label is **portrait**, 40mm wide × 60mm tall, at 203dpi
+  (`labelWidthDots` = 320, `labelHeightDots` = 480 — the only resolution the
+  ZD230 comes in). This went through three rounds tuned against real
+  printed labels: a first landscape 60×40 draft turned out to have
+  width/height backwards (confirmed from a photo of the actual print — huge
+  blank space below the content because the real media is taller than
+  declared), then a horizontal QR-left/text-right layout, before the owner
+  gave the real physical orientation (40mm on top/bottom, 60mm on the
+  sides) and asked for portrait with the QR on top instead. Current layout:
+  QR centered at the top (magnification 8), order id/customer
+  name/dimensions/item id stacked below it (`^FB` word-wraps the customer
+  name to 2 lines). Prints: order id, customer name, carpet dimensions
+  (`Fmt.dimensions`, the whole line omitted — not printed as a bare "—" —
+  until the rug is measured), the QR code, and the item id as small plain
+  text (needed for the existing manual-entry fallback in
+  `scanner_screen.dart` when a QR won't scan — without printed text there's
+  nothing to type in). Deliberately does **not** print a per-piece "KOS x/y"
+  marker or a date, per the exact field list requested; worth reconsidering
+  if two rugs in the same multi-item order ever need to be told apart by
+  eye without scanning.
+- `lib/data/zebra_printer.dart` — `ZebraPrinterService` opens a raw TCP
+  socket to `zebraPrinterIp:9100` (the "raw" printing port every Zebra
+  Link-OS printer listens on) and writes the ZPL bytes. No vendor SDK, no
+  platform-specific plugin — this is why it works identically on Android
+  and iOS.
+- The printer IP is **hardcoded** as the `zebraPrinterIp` constant in
+  `zebra_printer.dart` (owner's explicit choice — it's a fixed/static IP
+  set in the router, and they didn't want a settings screen for it). If the
+  printer ever moves to a different address, that one constant is the only
+  place to change.
+- `labels_screen.dart`'s "Natisni" button sends ZPL for every item in the
+  order in one socket connection instead of opening the OS print dialog;
+  the on-screen "Predogled" grid was updated to match exactly what prints.
+  The `pdf`/`printing` packages and the old A4-grid PDF builder were
+  removed since nothing else used them.
+
+**Gotcha found on first real-device test (2026-09-17):** on iPhone, the
+`Socket.connect` to the printer just hung and timed out
+(`SocketException: Connection timed out, host: 192.168.1.138, port: 9100`)
+even with the printer reachable — because `ios/Runner/Info.plist` had no
+`NSLocalNetworkUsageDescription`. Since iOS 14, any raw socket connection to
+a device on the local network (not just Bonjour) is silently blocked
+without that key — no prompt, no error, connections just never complete.
+Added the key; **requires a fresh install** (Info.plist changes don't apply
+via hot reload/restart) and the user must grant the "find and connect to
+devices on your local network" prompt on first print attempt after
+reinstalling — if it was already denied once, it has to be re-enabled in
+Settings → Aladin → Local Network.
+
+**Not yet verified — check before trusting this in production:**
+- `zebraPrinterIp` is set to `192.168.1.38` (the printer's real static IP;
+  an earlier value of `.138` was a typo, corrected 2026-09-17) — print
+  success still unconfirmed
+  pending a rebuild with the Local Network permission fix above.
+- Slovenian diacritics (č š ž) rely on `^CI28` (UTF-8) being honored by the
+  built-in ZD230 font — print a real label with a name containing them and
+  confirm before relying on it; if it renders wrong, the fix is a different
+  `^A` font or a Zebra bitmap font with the right code page.
+- The 40×60mm portrait size is what the owner physically measured off the
+  label roll, but this specific layout (QR mag 8, portrait) hasn't itself
+  been print-tested yet — confirm it actually fills the label without
+  clipping before treating this as done.
+- No physical ZD230 has been used to test a full-order print yet — verify
+  multiple items back to back doesn't drop labels or need a delay between
+  sockets.
+
+### 4.7 — Per-location order numbering (LJ-.../MB-...) — DONE, UNVERIFIED on real hardware (2026-09-17)
+Orders are no longer numbered with a single global counter (`#1847` style).
+Each order is now created under a **poslovalnica** (location) the employee
+picks in "Novo naročilo" — Ljubljana or Maribor — and gets a sequential id
+scoped to that location:
+- `lib/models/enums.dart` — `OrderLocation` enum (`ljubljana`/`maribor`)
+  with `.code` ("LJ"/"MB").
+- `lib/core/order_id.dart` — `buildOrderId(location, n)`, pure and unit
+  tested indirectly via `zpl_test.dart`'s fixtures. Sequence: `LJ-001` …
+  `LJ-999`, then `LJ1-001` … `LJ1-999`, then `LJ2-001` … — the cycle digit
+  is appended directly after the location code and only appears once the
+  3-digit counter has wrapped at least once. `n` never resets.
+- `AppState.nextOrderSeqLjubljana`/`nextOrderSeqMaribor` replace the old
+  single `nextOrderNumber` counter; `Repository.createOrder` now requires
+  `location:` and computes the id from the right counter.
+- `WorkOrder.id` **is** the formatted order id (e.g. `LJ-001`); `.number`
+  is just `id` now (dropped the old `#` prefix). Item ids are still
+  `<orderId>-<index>` (e.g. `LJ-001-2`), so the QR/scan path didn't need to
+  change shape — but `RugItem.orderNumber` used to parse it back out with
+  `id.split('-').first`, which broke the moment the order id itself gained
+  a hyphen; fixed to just return the `orderId` field it already had.
+  `core/scan.dart`'s normalizer also had to start allowing A–Z (it
+  previously stripped everything but digits and `-`).
+- Firestore: the `meta/counters` document now stores
+  `nextOrderSeqLjubljana`/`nextOrderSeqMaribor` instead of
+  `nextOrderNumber`. Old documents/local saves without these fields default
+  both counters to 1 — this does **not** migrate whatever count a shop was
+  already at under the old scheme, it just starts the new scheme fresh.
+- Seed demo data (`lib/data/seed.dart`) was renumbered to `LJ-001`…`LJ-006`,
+  all under Ljubljana, counters seeded at 7/1.
+
+**Not yet verified:**
+- No real multi-employee/multi-phone test of two people creating orders in
+  the same location at the same moment — the counter write in
+  `store.dart` is a plain doc read + batched set, not a Firestore
+  transaction, so it inherits whatever race-condition exposure the
+  original single-counter version already had (out of scope for this
+  change; flagging so it isn't assumed fixed).
+- References to the old `#1847`-style numbering elsewhere in this file
+  (§3 "Verified working", the original spec in §6) describe **past**
+  manual test sessions that genuinely used that numbering at the time —
+  left as accurate history, not updated to the new scheme.
+
+### 4.8 — Third location: Celje (CE-...) + "Poslovalnica" → "Območje" — DONE (2026-09-20)
+Added a third pickup location alongside Ljubljana/Maribor, and renamed the
+user-facing label from "Poslovalnica" to "Območje" everywhere it appears
+(quick order card, "Novo naročilo", "Uredi naročilo").
+- `lib/models/enums.dart` — `OrderLocation` gained `celje`, with
+  `.label` "Celje" and `.code` "CE". `buildOrderId`/the QR-etiquette path
+  needed no changes since they already key off `.code` generically (e.g.
+  `CE-001-1`).
+- `AppState` gained `nextOrderSeqCelje` (mirrors the Ljubljana/Maribor
+  counters) — threaded through `Repository.createOrder`,
+  `FirestoreStore.load/watch/save` (`meta/counters` doc), and
+  `seed.dart` (seeded at 1). Old counter docs without this field default
+  to 1, same pattern as the original LJ/MB rollout in §4.7.
+- The "Poslovalnica"/"Območje" toggles in `quick_order_card.dart` and
+  `new_order_screen.dart` already looped over `OrderLocation.values`, so
+  Celje shows up there with no extra UI code — only the section label
+  text needed renaming.
+
+### 4.9 — Naročila: 4 fazni zavihki namesto Aktivna/Zaključena — DONE (2026-09-21)
+Zavihka *Aktivna*/*Zaključena* iz §4.4 sta zamenjana s štirimi zavihki, ki so
+neposredno koraki proizvodnje: **Naročila** (še ni šlo v proces) →
+**Čaka pranje** → **Sušenje** → **Pripravljeno**. Odločitve, potrjene z
+lastnikom pred implementacijo:
+
+- **Mešani koraki znotraj enega naročila** (npr. 2 kosa čakata pranje, 3 so
+  že v sušenju) — naročilo se pokaže v **vseh** ustreznih zavihkih hkrati, ne
+  samo v enem. Prvi zavihek ("Naročila") je izjema in ostaja izključujoč:
+  naročilo je tam samo, dokler *noben* kos še ni zapustil `awaitingPickup`
+  (`OrderStatus.scheduledPickup`). Logika je v `OrderPhase.matches()` v
+  `orders_screen.dart`.
+- **`RugStatus.finishing`** ("Mere in cena") nima lastnega zavihka — kos v tem
+  stanju šteje pod "Sušenje", skladno z obstoječim komentarjem ob
+  `finishRugFromDrying()` v `repository.dart`, da ta status namenoma ni
+  ločena čakalna vrsta.
+- **Zaključena naročila so povsem umaknjena s te strani** — ko so vsi kosi
+  naročila `returned`, naročilo izgine iz vseh štirih zavihkov. Zgodovina je
+  dostopna samo še prek profila stranke (`CustomerDetailScreen`, razdelek
+  "Zgodovina"), ki to že prikazoval pred to spremembo — ni bilo treba graditi
+  novega zaslona.
+- Zato je bila **"Zaključena naročila" vrstica v meniju Več odstranjena**
+  (skakala je na zavihek, ki ne obstaja več) in `ordersTabProvider` v
+  `data/navigation.dart` ukinjen, ker ga zunaj `orders_screen.dart` ni
+  uporabljal nihče drug. `stats_screen.dart` (skupni promet zaključenih
+  naročil) je neodvisen od tega providerja in ni bil prizadet.
+- Filter za "korak" (`OrderFilter.step`) je odstranjen iz ikone filtra v
+  glavi — zavihki zdaj pokrivajo isto potrebo. Filter za kanal je ostal.
+- `OrderCard`: naročila v statusu `scheduledPickup` zdaj vedno dobijo enak
+  opozorilni videz (rdeč rob, ikona opozorila, vrstica "Čaka prevzem v
+  delavnici.") kot zamujena naročila, ne glede na to, ali je rok dejansko
+  že mimo — ker čakanje na prevzem v delavnico samo po sebi zahteva akcijo.
+  Dejansko zamujena naročila (`isOverdue`) imajo prednost in še vedno kažejo
+  "Zamuja X dni".
+
+### 4.10 — QA popravki v4 (PDF "ALADIN_APP_QA_popravki_v4_FINAL") — DONE v kodi (2026-09-28)
+Lastnikov QA dokument (v2 + v3 checklist, točke 1–15). Odločitve, potrjene z
+lastnikom pred implementacijo, so označene z ✔.
+
+**Vstop v proces**
+- ✔ **Vsako** novo naročilo (tudi Pripeljano) začne v `awaitingPickup` → zavihek
+  Naročila. V Čaka pranje gre šele ob uspešnem tisku etiket
+  (`Repository.markLabelsPrinted`, kliče ga `labels_screen.dart`) ali ob
+  "Prevzeto pri stranki". Ponovni tisk premakne samo še neprevzete kose.
+  Kos, dodan naročilu pred prevzemom, prav tako počaka v `awaitingPickup`.
+- Etikete po ustvarjanju imajo X (Zapri) — vrne tja, od koder je bilo
+  naročilo ustvarjeno.
+- Območje: `showSelectedIcon: false`, da se "Ljubljana" ne prelomi.
+
+**Stran Naročila** (logika v `lib/data/order_phases.dart`, testi v
+`test/order_phases_test.dart`; `OrderPhase` se je preselil sem iz
+`orders_screen.dart`)
+- Čaka pranje / Sušenje prikazujeta **posamezne kose**, grupirane po naročilu,
+  skupine razvrščene po prihodu (`RugItem.arrivedAt` = prvi prehod v
+  `awaitingWash`), najstarejši zgoraj. Tap na kos v Sušenju odpre Hitri
+  obračun neposredno.
+- ✔ Pripravljeno prikaže **samo v celoti pripravljena** naročila. Že
+  obračunani kosi nedokončanega naročila ostanejo sivo vidni v njegovi skupini
+  v Sušenju. Sub-taba **Pripeljano / Dostave** se razdelita po `handover`
+  (stranka pride / mi dostavimo) — to je natanko "kaj čaka osebni prevzem in
+  kaj moramo peljati na naslov".
+- Iskanje na vrhu (ID naročila ali kosa, ime brez šumnikov, telefon po
+  števkah, naslov) čez vse štiri zavihke; vsak zadetek pove, v katerem zavihku je.
+- `OrderCard`: naročilo pred prevzemom je nevtralno (rdeče samo, ko je termin
+  dejansko mimo — `WorkOrder.isPickupOverdue`), kaže termin, naslov in telefon,
+  brez vrstice "Čaka prevzem v delavnici." in brez "0/n prevzeto". To
+  **nadomešča** pravilo iz §4.9, da je vsako naročilo pred prevzemom rdeče.
+
+**Podrobnosti naročila / termin**
+- Blok Podatki ima stolpec label enake širine; telefon `Fmt.phone`
+  ("031 353 517"), tap = klic; tap na naslov = Apple Maps (iOS) / Google Maps.
+  Nov paket `url_launcher` + `<queries>` za `tel`/`https` v AndroidManifest.
+- `PickupWindowPicker`: namesto preset gumbov ena vrstica "Od [09:00] Do
+  [11:00]", tap odpre kolo (korak 30 min). Enaka ura Od/Do je dovoljena
+  (točna ura).
+
+**Hitri obračun**
+- Mere: 1/2/3 m² + Drugo, dodane standardne 1,2×1,7 / 2,3×1,7 / 3×2 / 3,5×2,5
+  (4 v vrsto, ker so oznake kratke); vrste in doplačila 2 v vrsto, nižji gumbi.
+- ✔ `ExtraTemplate.choices`: postavka z izbiro zneska ob obračunu ("Dlake"
+  5 € ali 10 €). Ureja se v Več → Doplačila (polje "Izbira ob obračunu", npr.
+  `5; 10`).
+
+**Etikete** (`lib/core/zpl.dart` + predogled)
+- Dostave: velik ID kosa (LJ-021-1). Pripeljano: največ ime + telefon + KOS x/y.
+  QR in interni ID ostaneta na obeh. `orderId` ni več parameter
+  `buildLabelZpl` (vsebovan je v ID-ju kosa). **Še ni natisnjeno na pravem
+  ZD230** — preveri, da se dolgo ime v 2 vrsticah + telefon + KOS + ID prilegajo
+  60 mm brez rezanja.
+
+**Vračilo**
+- Podpis se odpre kot sheet (brez vlečenja za zapiranje, da poteza podpisa ne
+  zapre okna); po podpisu ali administratorskem zaključku se aplikacija vrne na
+  seznam (`popUntil(isFirst)`).
+
+**✔ Šifrant ureja lastnik v aplikaciji, ne koda** — vrste in doplačila so v
+Firestoreju, seed je samo demo. Administrator v Več naredi:
+1. Vrste preprog: izbriši **Gumi tepihi** (ostale ostanejo).
+2. Doplačila: izbriši vse obstoječe in dodaj:
+   `Dodatno pranje` +30 %, `Urin` 3 €/m², `Dlake` 5 € z izbiro `5; 10`,
+   `Vnos` 5 €, `Iznos` 5 €. Ročni popust na kos je del zaslona, ne šifranta.
+
+**Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
+`flutter analyze` + testi, ne pa vizualno.
+
+### 4.11 — Clean UX V8 (PDF "ALADIN_APP_CLEAN_UX_V8_FINAL") — DONE v kodi (2026-10-18)
+Veja `feature/ux-v8` (V4 je commitan na `fix/qa-v4`). Odločitve, potrjene z
+lastnikom pred implementacijo, so označene z ✔.
+
+**Potek:** Danes / Hiter vnos → Naročila → Čaka pranje → Sušenje →
+Pripravljeno → Dostave → Predaja / podpis.
+
+- ✔ **Regija DOL** je četrta `OrderLocation` (`dolenjska`, koda `DOL`) z lastnim
+  števcem (`nextOrderSeqDolenjska`, `meta/counters` v Firestoreju, stari
+  dokumenti brez polja → 1). ID-ji `DOL-001-1`. V Hitrem vnosu in Novem naročilu
+  se regija izbira s kodami LJ/MB/CE/DOL (napis "Regija", ne več "Območje").
+- ✔ **Tisk ni prevzem** (obrne QA v4 §2): `markLabelsPrinted` je odstranjen.
+  Kosi gredo iz `awaitingPickup` samo prek `Repository.confirmPickup` — sheet
+  `ui/orders/pickup_sheet.dart` ("Prevzeto pri stranki"). `nextStatusFor`
+  za `awaitingPickup` vrne null, skeniranje takega kosa odpre sheet.
+  Pripeljano: ustvari → sheet → etikete (`continueAfterOrderCreated`); Naš
+  prevzem: ustvari → etikete.
+- ✔ **Doplačila ob prevzemu:** Vnos/Iznos +5 € na naročilo
+  (`WorkOrder.orderExtras`), Urin (3 €/m²) in Dlake (5/10 €) kot oznaka na
+  kosu (`RugItem.extras`) — znesek Urina se izračuna šele ob obračunu po
+  izmerjenih m². Prepoznava po imenu iz šifranta (`orderLevelExtraNames`,
+  `itemPickupExtraNames`, vgrajeni `fallback*` če jih lastnik izbriše).
+  Vnos/Iznos sta skrita v Hitrem obračunu (`ExtraTemplate.isOrderLevel`).
+- ✔ **Dostavno doplačilo** (`WorkOrder.deliveryFee`, 10–50 € po 5 €, 0 = brez):
+  stepper pri Našem prevzemu v Hitrem vnosu, Novem naročilu in Uredi naročilo.
+- ✔ **Obračun naročila** (`lib/data/billing.dart`, `AppState.billing/orderTotal`):
+  kosi + Vnos/Iznos + dostava + **minimum 50 €** (samo kanal `delivery`, šele ko
+  so vsi kosi obračunani; razlika je ločena vrstica, cena kosa ostane ročno
+  popravljiva). Prikazano v Hitrem obračunu (povzetek naročila) in v podrobnostih.
+- **Home (Danes):** Hiter vnos + štirje privzeto zaprti bloki s števcem —
+  Prevzemi danes, Vračila danes (V kombiju ali termin danes), Delavnica
+  (števci Čaka pranje/Sušenje/Pripravljeno/Dostave → odpre zavihek prek
+  `ordersPhaseRequestProvider`), Potrebna akcija (prevzem zamuja, Ni klicano,
+  kosi obtičali v "Mere in cena"). Največ 5 vrstic na blok. Stare ploščice in
+  seznami odstranjeni. Hiter vnos ima povezavo na polni obrazec (B2B…), ker
+  FAB na Naročilih ne obstaja več.
+- **5 top-level zavihkov** (`OrderPhase.deliveries` dodan), števci ob zavihkih
+  (`phaseCounts`): kosi pri Čaka pranje/Sušenje, naročila drugje. Brez + gumba.
+- ✔ **Pripravljeno** je en seznam brez pod-zavihkov: *Ni klicano* → klik na
+  telefon/Pokliči zabeleži `calledAt` (prvi klic) → *Klicano · čaka stranko*;
+  *Za dostavo* z gumbom **V kombi**. Rok vračila = `readyAt` + 10 dni
+  (`returnReminderDays`), siva opomba.
+- ✔ **V kombi** je zastavica `WorkOrder.inVanAt` (ne status): `_recompute` jo (in
+  `calledAt`) počisti, ko naročilo ni več pripravljeno za predajo. **Dostave** =
+  samo `isInVan`; filtri Vse/LJ/MB/CE/DOL, telefon = klic, naslov = Maps,
+  ~~**Odpri pot**~~ (odstranjeno v V10 §4.12), Vrni (ReturnFlow) in Iz kombija
+  (undo).
+- **Brez "Zamuja":** odstranjeno z OrderCard, Home in iz zvonca (`AlertKind`
+  ima samo `readyForHandover`). Rdeče je samo še zamujen naš prevzem.
+- **Skeniranje:** hitri način je privzeto vklopljen; premik ima haptic +
+  **Razveljavi** (`Repository.undoAdvance`). V Sušenju QR še vedno odpre Hitri
+  obračun (nikoli ne preskoči).
+- **Etikete — popravek 2026-10-21: medij je LEŽEČ 60×40 mm** (`labelWidthDots`
+  = 480, `labelHeightDots` = 320). Fotografija prave natisnjene nalepke je
+  pokazala, da QR in besedilo tečejo vzdolž DALJŠE stranice; prejšnja pokončna
+  predpostavka 40×60 (§4.6) je natisnila samo zgornjih ~40 mm in odrezala
+  x/y, ime in ID. Prva (60×40) različica je imela samo premajhno vsebino, ne
+  napačnega medija. Postavitev je zdaj en opis (`buildLabelLayout` →
+  `LabelLayout`), ki ga uporabljata tisk (ZPL) in predogled v aplikaciji.
+  Zgoraj velika oznaka (+ x/y desno na isti črti), spodaj levo QR (mag. 7),
+  desno besedilo; varni rob 20 pik; ID kosa je na vseh vrstah natisnjen
+  majhno (ročni vnos). Širina pisave 0 ≈ 0.57 × višina na znak
+  (`estimateTextWidth`, izmerjeno na fotografiji) — testi preverjajo, da se
+  velika oznaka in x/y ne prekrivata. Vrste: regija (MB/CE/DOL,
+  ne glede na način) = velika oznaka + x/4 + ime/telefon + QR; LJ dostava =
+  velik ID naročila (LJ-099) + 3/4 + QR, manjše ime; LJ Pripeljano = veliko ime
+  + telefon + 3/4 + QR. Brez prevzemne točke in brez mer. QR vsebuje še vedno
+  polni ID kosa. **Print all** + **Natisni izbrane** (izbira kosov na
+  predogledu) + ponatis iz podrobnosti kosa. **Nova ležeča postavitev še ni
+  natisnjena** — natisni po eno nalepko vsake vrste in preveri rob/sponke.
+- ✔ Seed: vrste "Navadna / sintetika", Shaggy, Volna, "Perzijska / ročno
+  vozlana", doplačilo "Ponovno pranje" (+30 %). Šifrant v Firestoreju
+  (lastnik v aplikaciji) se NE spremeni sam — preimenuj ročno v Več.
+- ✔ Izpuščeno ("Kasneje" v PDF): autocomplete naslovov, review QR + SMS,
+  plačano/neplačano.
+
+**Testi:** `test/v8_flow_test.dart` (DOL, prevzem z doplačili, obračun +
+minimum, V kombi/Dostave, Klicano, Undo), `test/zpl_test.dart` prepisan.
+**Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
+`flutter analyze` + testi, ne pa vizualno.
+
+### 4.12 — Post-live QA V10 (PDF "ALADIN_APP_POST_LIVE_QA_V10_FINAL") — DONE v kodi (2026-10-22)
+Veja `fix/post-live-qa-v10` (iz `development`). Core flow ostane nespremenjen:
+brez novih statusov in brez dodatnih korakov. Odločitve, ki jih PDF ne določa in
+sem jih izbral sam, so označene z ⚑ — preveri jih.
+
+**P1**
+- **Klicano iz vseh vstopnih točk.** Vsak klic gre skozi
+  `ui/orders/call_customer.dart` (`callCustomer`): zabeleži `calledAt` in šele
+  nato odpre klicalnik. Uporabljajo ga seznam Pripravljeno, telefon na podrobnostih
+  naročila in telefon na kartici v Dostavah. `Repository.markCalled` sam preveri
+  `status == awaitingCollection` (pri naročilu v proizvodnji bi ga `_recompute`
+  tako ali tako pobrisal). **Nov vstopni kanal za klic mora uporabiti
+  `callCustomer`, ne `callPhone`.**
+- **Direktno urejanje.** Podrobnosti kosa: „Uredi mere in ceno“
+  (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`): vrsta,
+  širina/dolžina (ali m² pri ročnem vnosu), doplačila, popust (oboje dodano v
+  §4.13) in končna cena; status se ne
+  spremeni, površina/osnova/obračun naročila se izpeljejo sami. Cena sledi
+  izračunu, dokler je ne spremeniš sam; že prej ročno določena cena se ob
+  popravku mer ne povozi tiho (ponudi se „Uporabi izračun“). Podrobnosti
+  naročila: „Uredi“ pri Podatkih (`ui/orders/edit_customer_sheet.dart`): ime /
+  podjetje (+ kontaktna oseba pri podjetju), telefon, naslov. ⚑ Popravek
+  gre skozi `Repository.updateCustomer`, torej velja za stranko in vsa njena
+  naročila (že obstoječe obnašanje: podvojeni podatki na naročilih se uskladijo).
+  „Zamenjaj stranko“ (Uredi naročilo) je samo še prava menjava.
+- **Hitri obračun.** Vrste: Sintetika, Shaggy, Volna, Perzija (`sortedRugTypes`
+  v `models/catalog.dart`; šifrant v Firestoreju nima vrstnega reda, zato se
+  razvrsti po imenu — neznane vrste na konec). Mere: 1/2/3 m², Drugo, 1,2×1,7,
+  1,35×1,95, 2,3×1,7, 3×2, 3,5×2,5, 4×3. Doplačila so ena tipka na znesek:
+  „Urin +3 €/m²“, „Dlake +5 €“, „Dlake +10 €“, „Ponovno pranje +30 %“
+  (`sortedQuickExtras`); izbirnik za Dlake je odpravljen. Vnos/Iznos ostajata
+  samo na prevzemu. Seed je preimenovan (Sintetika / tanki tepihi, Shaggy /
+  kosmati-debelejši, Volna, Perzija / ročno vozlana). **Šifrant v Firestoreju se
+  ne spremeni sam** — imena, ki jih lastnik že ima, delujejo (razvrščanje je po
+  ključnih besedah), vendar preimenovanje v Več naredi lastnik.
+
+**P2**
+- **Pripravljeno.** Filtri Vse / LJ / MB / CE / DOL (`RegionFilterBar`, regije
+  iz `OrderLocation.values`, zato nova regija dobi filter sama; manjši
+  `FilterPill(dense)`), nato zložljive sekcije Za dostavo → Ni klicano →
+  Klicano · čaka stranko s številom; prazna sekcija je skrita. ⚑ Vse sekcije so
+  privzeto ZAPRTE (kot bloki na Danes); stanje drži `readyOpenSectionsProvider`,
+  da ostane ob menjavi zavihka. Če želiš odprto Ni klicano, spremeni privzeto
+  vrednost tega providerja.
+- **Dostave.** „Odpri pot“ je odstranjen (gumb in `openMapsRoute`). Ročni
+  vrstni red: ročaj ali dolg pritisk na kartici, `ReorderableListView`. ⚑ Shranjen je
+  v bazi kot `WorkOrder.vanOrder` (ne na napravi), torej ga vidijo vsi telefoni in
+  preživi ponovni zagon. `Repository.sendToVan` doda naročilo na konec,
+  `removeFromVan` ga počisti, `reorderVan` pri filtriranem seznamu (npr. samo
+  MB) premakne samo prikazana naročila na njihova prejšnja mesta. Razvrščanje:
+  `sortedForVan` v `order_phases.dart` (naročila brez številke so pred urejenimi).
+- **Skener: Google ocena.** Gumb „Natisni Google oceno“ med pripomočki
+  (`buildReviewZpl`): generična nalepka brez podatkov stranke — „Hvala za
+  zaupanje! Ste zadovoljni? Ocenite nas na Googlu“ + velik QR. ⚑ **Povezave nihče
+  ni sporočil**, zato je `googleReviewUrl` v `lib/core/review.dart` PRAZEN in
+  gumb pove „Povezava za Google oceno še ni nastavljena.“ — vpiši jo (ena
+  konstanta) in je v redu. Velikost QR-ja se prilagodi dolžini povezave.
+
+**Mali QA fixi**
+- Snackbar z Razveljavi je izginjal prepočasi, ker Flutterjev `SnackBar` z
+  akcijo privzeto sploh ne izgine (`persist` = true). Vsi taki gredo zdaj skozi
+  `showUndoSnackBar` (`ui/widgets/undo_snackbar.dart`): 5 s, `persist: false`.
+  **Nov SnackBar z akcijo mora uporabiti ta helper.**
+- Enote števcev: Čaka pranje / Sušenje / skener štejejo kose, ostalo naročila.
+  Zavihki imajo podnapis (`UnitCaption`: „46 naročil“ / „68 kosov“), skener in
+  Danes izpišeta enoto ob številki (`Fmt.pieces`, novi `Fmt.orders`).
+- Območje ostane zaklenjeno po ustvarjanju naročila (brez spremembe).
+
+**Obvestila (zvonec, `data/alerts.dart`)** — samo tri, vsako ena združena
+vrstica: po 24 h „3 pripravljena naročila še niso klicana.“; po koncu delovnika
+„2 naročili sta še v kombiju.“; dnevni povzetek „Danes: 6 prevzemov, 4 dostave.“
+⚑ Konec delovnika je konstanta `workdayEndHour = 17` — PDF ure ne navaja.
+⚑ Prejšnja obvestila „LJ-001 je pripravljeno“ (ena na naročilo) so odstranjena,
+ker jih PDF prepoveduje („ne ena na stranko“, „brez notification spama“). Obvestila
+so še vedno samo v aplikaciji (push je še vedno nedelujoč, glej §4.1);
+`alertsProvider` se osvežuje vsako minuto, ker so odvisna od časa.
+
+**Etikete po predlogi** (`lib/core/zpl.dart`, `LabelLayout` + predogled): vse na
+sredini, QR (mag. 7) zgoraj na sredini, pod njim velika vrstica in manjša:
+Pripeljano = „Remec  2/4“ + telefon; LJ dostava = „LJ-021  3/4“ + ime;
+regije = „MB-001  2/4“ + ime. Predpona ID-ja naročila je že regija, zato
+`regionCode` ni več parameter in posebne oznake regije ni. Velikost velike
+vrstice se prilagodi širini (66 → 34), predolgo ime se skrajša, x/y ostane cel.
+⚑ ID naročila je natisnjen s polnimi ničlami („LJ-021“, ne „LJ-21“ kot na skici),
+da je enak kot povsod v aplikaciji. ⚑ Majhen ID kosa ni več natisnjen (skica ga
+nima) — za ročni vnos zadošča „LJ-021  3/4“ → `LJ-021-3`. **Še ni natisnjeno na
+pravem ZD230** (geometrija je izračunana iz ocene širine pisave 0,57 × višina).
+
+**Testi:** `test/v10_test.dart` (Klicano, urejanje po obračunu, vrstni red
+Dostav, vrstni red Hitrega obračuna, množina, obvestila),
+`test/v10_widgets_test.dart` (Pripravljeno, Dostave z vlečenjem, klic in urejanje
+na podrobnostih, snackbar), `test/zpl_test.dart` prepisan. `flutter analyze`
+čist. **Ni preverjeno na napravi** (lastnik preverja ročno): vizualno (razmik,
+velikost tipk, občutek vlečenja) ni preverjeno.
+
+### 4.13 — Brisanje naročil, urejanje kosov, Hiter vnos vedno odprt — DONE v kodi (2026-10-26)
+Veja `feature/delete-and-edit-orders` (v `development` s PR #12) je bila namenoma
+narejena iz `development` brez V10. 2026-10-28 je bil `development` združen v
+`fix/post-live-qa-v10`; ker sta obe veji dodali `EditPricingSheet` /
+`editItemPricing`, velja ena različica — spodaj opisana, ki je nadmnožica V10 §1.
+⚑ = odločitev, ki je ni podal lastnik.
+
+- **Izbris naročila.** Koš v glavi podrobnosti naročila → potrditev → vrne na
+  prvi zaslon (`Repository.deleteOrder`). ⚑ Briše se samo **odprto** naročilo:
+  zaključeno hrani dokazilo o vračilu (podpis), zato gumba nima in
+  `deleteOrder` vrne false. Briše se naročilo + vsi njegovi kosi; stranka ostane
+  (CRM). Števec številk se ne zmanjša — natisnjena etiketa izbrisanega naročila
+  je lahko še na preprogi, številka se ne ponovi.
+  **Past, ki je bila v `FirestoreStore.save`:** zbirke so se brisale prek
+  `diff()`, naročila pa imajo svojo zanko (zaradi podpisa) in so se samo pisala —
+  izbrisano naročilo bi ostalo v bazi in se ob naslednjem posnetku vrnilo brez
+  kosov. Zanka zdaj briše tudi naročila, ki jih ni več v stanju.
+  **Ni preverjeno proti živemu Firebase** (v testih ga ni mogoče pognati).
+- **Uredi kos** (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`):
+  vrsta, mere (ali m² pri ročnem vnosu), doplačila, popust in končna cena že
+  obračunanega kosa; status se ne spremeni. Dostop: ⋮ ob kosu na podrobnostih
+  naročila ali „Uredi mere in ceno“ v bloku Mere in cena na kosu. Vrste in
+  doplačila so urejena kot v Hitrem obračunu (`sortedRugTypes`,
+  `sortedQuickExtras`), doplačila z izbiro pa imajo tipko za vsak znesek
+  („Dlake +5 €“ / „Dlake +10 €“). Pravila: cena sledi
+  izračunu, dokler je ne spremeniš sam (ročno določena se ne povozi); vrsta, ki
+  je ne spremeniš, obdrži ceno na m², zapisano na kosu (sicer bi popravek tiho
+  prečenil kos po današnjem ceniku); doplačilo, ki ga šifrant ne pozna več, ostane.
+  Zgodovina kosa dobi vrstico „Popravljeno (vrsta, cena): 154.44 €“ s tem, kar se
+  je res spremenilo; popravek brez sprememb ne zapiše nič. Neobračunan kos (še
+  brez vrste in mer) se ne ureja — vrsto in mere dobi v Hitrem obračunu.
+- **Vnos / Iznos naknadno:** „Uredi naročilo“ ima razdelek „Doplačila prevzema“.
+  Že zapisano doplačilo ohrani svoj znesek, tudi če je lastnik ceno v šifrantu
+  medtem spremenil. `templateOrFallback` (`models/catalog.dart`) je skupen s
+  `PickupSheet`.
+- **Hiter vnos** na Danes je vedno odprt (brez zložljive glave); štirje bloki pod
+  njim ostanejo zaprti.
+- ⚑ Zgodovina kosa po popravku našteje spremenjeno („Popravljeno (vrsta, cena)“);
+  V10 je zapisal vedno „Mere in cena popravljene“. `test/v10_test.dart` je
+  prilagojen.
+- **Testi:** `test/delete_and_edit_test.dart` (25 testov: repozitorij + zasloni).
+  **Ni preverjeno na napravi:** vizualno (velikost mrežnih gumbov v sheetu,
+  meni ⋮ na ozkih telefonih) ni preverjeno.
+
+1. Read this file fully.
+2. Check `flutter --version` works; if not, see Section 2 for how Flutter
+   was installed on the original machine.
+3. Run `flutter pub get`, then `flutter test` to confirm the baseline
+   still passes before changing anything.
+4. Run `flutter analyze` — should report **zero issues**; keep it that way.
+   If it crashes with a `FormatException` from the analysis server, the
+   project path contains a curly apostrophe (the iCloud
+   `Desktop - Nal’s MacBook Air` folder). `dart analyze` works fine and
+   gives the same result; moving the project out of iCloud fixes it.
+5. Firebase is already set up and live — read 4.1 for the exact state
+   before touching it. Anything needing the owner's Google login
+   (`flutterfire configure`, `firebase login`, enabling billing, changing
+   console settings) **cannot be done by an agent — ask the human.**
+   Note `firebase deploy` may also be blocked for agents; hand the human
+   the command instead.
+6. Never make `Repository` or UI files depend on which `DataStore` is
+   active — that separation is intentional and is the main thing that
+   makes this codebase easy to extend.
+7. If adding new rug/order statuses or transitions, update
+   `Repository._recompute()` and the corresponding tests in
+   `test/production_flow_test.dart`.
+
+## 6. Original spec (verbatim, Slovenian) — ground truth for requirements
+
+Evo, ta slika je približno vizualizacija tega, kar imam v mislih. Na izi bi
+sistem deloval tako:
+
+**1. ZGORAJ = NAROČILA / OFFICE**
+Imamo 3 glavne kategorije:
+- DOSTAVA – stranke, kjer mi pobiramo in vračamo preproge. Tukaj bi imel po
+  dnevih napisano, kdo je za prevzem in kdo za vračanje, naslov, okvirno uro
+  in št. kosov. To bi mi zamenjalo list, kamor zdaj pišem vse prevzeme in
+  dostave.
+- OSEBNI PREVZEM – ljudje, ki sami pripeljejo preproge. Ko pride stranka,
+  naredimo naročilo, vpišemo podatke in koliko kosov je pustila. Ko so vsi
+  tepihi končani, se naročilo avtomatsko pojavi pod ČAKA NA PREVZEM.
+- B2B – hoteli, firme, ustanove itd. Isti princip, samo da ima firma svoj
+  profil, aktivna naročila in zgodovino.
+
+Vse troje so v bistvu samo različni načini, kako naročilo pride v isti
+sistem.
+
+**2. SPODAJ = POSAMEZNA PREPROGA / PROIZVODNJA**
+Vsak tepih znotraj naročila ima svojo QR etiketo. Primer, če ima Novak 3
+tepihe: #1847-1, #1847-2, #1847-3. Na etiketi bi bilo ime, št. naročila,
+npr. KOS 2/3 in QR. Ko skeniraš QR, se vedno odpre direktno ta konkretni
+tepih, ne samo celo naročilo. Po pranju ga skeniraš → SUŠENJE. Ko pride iz
+sušilnice, ga spet skeniraš in vneseš mere + vrsto/material. App iz tega
+izračuna m² in osnovno ceno. Na končnem sesanju pa dodamo še morebitna
+doplačila/popuste glede na to, kaj se je dejansko delalo, potrdimo končno
+ceno in damo READY.
+
+**3. APP SAM SESTAVLJA NAROČILO**
+Če ima Novak 3 kose in je stanje: 1847-1 READY, 1847-2 READY, 1847-3
+SUŠENJE — kaže 2/3 READY in celo naročilo še ni pripravljeno. Ko je 3/3
+READY, se avtomatsko prestavi: če je stranka sama pripeljala → ČAKA NA
+PREVZEM; če smo mi pobrali → ČAKA NA VRAČILO; če je B2B → pod ustrezno B2B
+naročilo. Tako vedno vemo, kateri konkretni tepih manjka.
+
+**4. FAIL-SAFE PRI VRAČILU**
+To bi rad še zaradi dokazila, da smo preproge dejansko vrnili. Ko stranka
+pride po preproge oziroma jih dostavimo, odpremo naročilo in pred
+zaključkom poskeniramo QR-je vseh kosov: 1/3 ✓, 2/3 ✓, 3/3 ✓. Šele ko so
+vsi poskenirani, se pojavi POTRDI VRAČILO. Potem se na telefonu odpre mini
+okno: "Potrjujem prevzem 3 preprog iz naročila #1847." Stranka se s prstom
+podpiše direktno na telefon. Sistem potem shrani: datum in uro vračila, 3/3
+vrnjene kose, kdo od zaposlenih je izvedel vračilo, podpis stranke. Po
+želji lahko stranka avtomatsko dobi še SMS/email potrdilo, da je bilo
+naročilo vrnjeno. Če podpisa iz nekega razloga noče/ne more dati, bi imeli
+admin override z razlogom, da nikoli ne blokiramo naročila. Tako imamo
+dejanski digitalni dokaz vračila in ni več situacije, da čez en mesec
+nekdo reče, da tepihov ni dobil nazaj.
+
+**5. GLAVNA LOGIKA**
+```
+WAITING FOR PICKUP
+        ↓
+ČAKA NA PRANJE
+        ↓
+SUŠENJE
+        ↓
+MERE + VRSTA + KONČNA OBDELAVA/CENA
+        ↓
+READY
+        ↓
+ČAKA NA PREVZEM / VRAČILO
+        ↓
+SCAN VSEH KOSOV + PODPIS
+        ↓
+VRNJENO / ZAKLJUČENO
+```
+
+Poanta je, da s tem zamenjamo praktično vse sedanje liste in ročno
+evidenco, hkrati pa se v ozadju avtomatsko gradi še CRM in zgodovina vsake
+stranke.
