@@ -851,6 +851,45 @@ minimum, V kombi/Dostave, Klicano, Undo), `test/zpl_test.dart` prepisan.
 **Ni preverjeno na napravi** (lastnik preverja ročno): vse zgoraj je pokrito z
 `flutter analyze` + testi, ne pa vizualno.
 
+### 4.13 — Brisanje naročil, urejanje kosov, Hiter vnos vedno odprt — DONE v kodi (2026-10-26)
+Veja `feature/delete-and-edit-orders`, namenoma iz `development` (brez V10 z
+veje `fix/post-live-qa-v10`). ⚑ = odločitev, ki je ni podal lastnik.
+
+- **Izbris naročila.** Koš v glavi podrobnosti naročila → potrditev → vrne na
+  prvi zaslon (`Repository.deleteOrder`). ⚑ Briše se samo **odprto** naročilo:
+  zaključeno hrani dokazilo o vračilu (podpis), zato gumba nima in
+  `deleteOrder` vrne false. Briše se naročilo + vsi njegovi kosi; stranka ostane
+  (CRM). Števec številk se ne zmanjša — natisnjena etiketa izbrisanega naročila
+  je lahko še na preprogi, številka se ne ponovi.
+  **Past, ki je bila v `FirestoreStore.save`:** zbirke so se brisale prek
+  `diff()`, naročila pa imajo svojo zanko (zaradi podpisa) in so se samo pisala —
+  izbrisano naročilo bi ostalo v bazi in se ob naslednjem posnetku vrnilo brez
+  kosov. Zanka zdaj briše tudi naročila, ki jih ni več v stanju.
+  **Ni preverjeno proti živemu Firebase** (v testih ga ni mogoče pognati).
+- **Uredi kos** (`ui/rugs/edit_pricing_sheet.dart` → `Repository.editItemPricing`):
+  vrsta, mere (ali m² pri ročnem vnosu), doplačila, popust in končna cena že
+  obračunanega kosa; status se ne spremeni. Dostop: ⋮ ob kosu na podrobnostih
+  naročila ali „Uredi“ v bloku Mere in cena na kosu. Pravila: cena sledi
+  izračunu, dokler je ne spremeniš sam (ročno določena se ne povozi); vrsta, ki
+  je ne spremeniš, obdrži ceno na m², zapisano na kosu (sicer bi popravek tiho
+  prečenil kos po današnjem ceniku); doplačilo, ki ga šifrant ne pozna več, ostane.
+  Zgodovina kosa dobi vrstico „Popravljeno (vrsta, cena): 154.44 €“ s tem, kar se
+  je res spremenilo; popravek brez sprememb ne zapiše nič. Neobračunan kos (še
+  brez vrste in mer) se ne ureja — vrsto in mere dobi v Hitrem obračunu.
+- **Vnos / Iznos naknadno:** „Uredi naročilo“ ima razdelek „Doplačila prevzema“.
+  Že zapisano doplačilo ohrani svoj znesek, tudi če je lastnik ceno v šifrantu
+  medtem spremenil. `templateOrFallback` (`models/catalog.dart`) je skupen s
+  `PickupSheet`.
+- **Hiter vnos** na Danes je vedno odprt (brez zložljive glave); štirje bloki pod
+  njim ostanejo zaprti.
+- ⚑ Imena `EditPricingSheet` / `editItemPricing` so enaka kot v V10
+  (`fix/post-live-qa-v10`), ker sta tam že zasedena z ožjo različico (vrsta, mere,
+  cena). Ob združitvi obdrži to različico — je nadmnožica (podpisi so združljivi,
+  ker sta `extras` in `discountPercent` neobvezna).
+- **Testi:** `test/delete_and_edit_test.dart` (24 testov: repozitorij + zasloni).
+  **Ni preverjeno na napravi:** vizualno (velikost mrežnih gumbov v sheetu,
+  meni ⋮ na ozkih telefonih) ni preverjeno.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.
