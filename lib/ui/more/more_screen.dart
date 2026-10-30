@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/providers.dart';
 import '../widgets/common.dart';
 import 'about_screen.dart';
 import 'app_settings_screen.dart';
@@ -12,12 +14,15 @@ import 'support_screen.dart';
 import 'users_screen.dart';
 
 /// Razdelilnik. Nastavitve so bile prej en dolg zaslon — tu so razbite na
-/// posamezne strani, da je vsaka stvar na svojem mestu.
-class MoreScreen extends StatelessWidget {
+/// posamezne strani, da je vsaka stvar na svojem mestu. Promet vidi samo
+/// administrator.
+class MoreScreen extends ConsumerWidget {
   const MoreScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAdmin = ref.watch(currentUserProvider)?.isAdmin ?? false;
+
     void open(Widget screen) => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => screen),
@@ -43,11 +48,12 @@ class MoreScreen extends StatelessWidget {
                   label: 'Cenik',
                   onTap: () => open(const ExtrasScreen()),
                 ),
-                MenuRow(
-                  icon: Icons.bar_chart,
-                  label: 'Statistika in promet',
-                  onTap: () => open(const StatsScreen()),
-                ),
+                if (isAdmin)
+                  MenuRow(
+                    icon: Icons.bar_chart,
+                    label: 'Statistika in promet',
+                    onTap: () => open(const StatsScreen()),
+                  ),
               ],
             ),
             const _GroupLabel('Upravljanje'),

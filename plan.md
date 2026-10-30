@@ -989,6 +989,11 @@ narejena iz `development` brez V10. 2026-10-28 je bil `development` združen v
 - **Testi:** `test/delete_and_edit_test.dart` (25 testov: repozitorij + zasloni).
   **Ni preverjeno na napravi:** vizualno (velikost mrežnih gumbov v sheetu,
   meni ⋮ na ozkih telefonih) ni preverjeno.
+- **Statistika in promet samo za administratorja (2026-10-29).** Vrstica v meniju
+  Več (`more_screen.dart`) se zaposlenemu (`UserRole.worker`) sploh ne pokaže;
+  `StatsScreen` je dosegljiv samo od tam. Skrita je v UI — podatki (naročila) so
+  v Firestoreu še vedno berljivi za vse prijavljene, torej to ni varnostna meja.
+  Test: `test/more_screen_test.dart`.
 
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
