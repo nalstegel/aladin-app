@@ -140,6 +140,24 @@ bound to an `AppUser` via `Repository.bindAuthUser`) → `AppShell`.
 - Label kind comes from the order (`labelKindFor`): region (MB/CE/DOL) first,
   then LJ delivery vs Pripeljano.
 
+## V10 rules (plan.md §4.12) — don't undo these by accident
+
+- **Every call goes through `callCustomer`** (`ui/orders/call_customer.dart`) so
+  `calledAt` is recorded whichever screen starts it. Don't call `callPhone`
+  directly for a customer phone number.
+- **Any `SnackBar` with an action uses `showUndoSnackBar`.** Flutter's default
+  is `persist: true` when an action is present, so a plain one never goes away.
+- **Dostave order is stored data** (`WorkOrder.vanOrder`, written only by
+  `Repository.reorderVan`; unset = by ID), sorted with `sortedForVan`. There is
+  no route generation — "Odpri pot" was removed on purpose.
+- **Quick-finish type/extra order is by name keyword** (`sortedRugTypes`,
+  `sortedQuickExtras`) because the Firestore catalog has no order field.
+- **Labels are one layout** (`buildLabelLayout`) used by both the printer and
+  the preview, and the Google-review label (`buildReviewZpl`) reuses it. The
+  link lives in `lib/core/review.dart` and is empty until the owner supplies it.
+- **Counters name their unit** ("46 naročil" / "68 kosov") — `Fmt.orders`,
+  `Fmt.pieces`, `UnitCaption`.
+
 ## UI conventions (added in the 2026-08-29 redesign, plan.md §4.4)
 
 - **Status labels live only in `enums.dart`.** Never hardcode a status string in
@@ -153,6 +171,11 @@ bound to an `AppUser` via `Repository.bindAuthUser`) → `AppShell`.
 - Shared widgets to reuse rather than re-roll: `AppCard` (has an `accent` left
   bar), `PageHeader`, `MenuGroup`/`MenuRow`, `FilterPill`, `SearchField`,
   `AvatarCircle`, `StatusChip`, `StageProgressBar`, `PlainProgressBar`.
+- **Orders and items are listed by ID, smallest first** (plan.md §4.14). Sort
+  with `compareOrderIds` (`core/order_id.dart`), never `id.compareTo` or a
+  timestamp: ids are parsed (`LJ10-001` after `LJ2-001`, `-10` after `-2`), and a
+  mixed list groups by region in filter order (LJ, MB, CE, DOL). The only
+  exception is Dostave, whose manual drag order (`vanOrder`) wins once set.
 - Any button that completes a return must go through `ReturnFlowScreen`. The
   dashboard's "Vrni" only opens it — the scan-every-item-then-sign gate is the
   feature, not an obstacle to route around.

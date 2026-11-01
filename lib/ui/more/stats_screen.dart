@@ -17,9 +17,11 @@ class StatsScreen extends ConsumerWidget {
     final state = ref.watch(repositoryProvider);
     final counts = ref.watch(productionCountsProvider);
 
-    final completed =
-        state.orders.where((o) => o.status == OrderStatus.completed).toList();
-    final open = state.orders.where((o) => o.status.isOpen).toList();
+    // Archived orders count neither as revenue nor as active.
+    final completed = state.orders
+        .where((o) => o.status == OrderStatus.completed && !o.isArchived)
+        .toList();
+    final open = state.orders.where((o) => o.isActive).toList();
 
     final revenue =
         completed.fold<double>(0, (s, o) => s + state.orderTotal(o.id));

@@ -597,7 +597,7 @@ class _SearchResults extends ConsumerWidget {
     final state = ref.watch(repositoryProvider);
     final results =
         state.orders
-            .where((o) => o.status.isOpen)
+            .where((o) => o.isActive)
             .where((o) => matchesSearch(o, state.itemsOf(o.id), query))
             .toList()
           ..sort((a, b) => compareOrderIds(a.id, b.id));

@@ -1034,6 +1034,63 @@ Ticket „Sortiranje naročil“: povsod so naročila privzeto od najmanjšega I
   `v10_test.dart` (Dostave, zvonec), `v10_widgets_test.dart` (Pripravljeno,
   Naročila + iskanje). **Ni preverjeno na napravi.**
 
+### 4.15 — Archive (Več → Arhiv) — DONE in code (2026-11-01)
+Branch `feature/KAN4-add-archive`. For old orders that were handed back in
+practice but never completed in the app: instead of deleting them they are moved
+out of the live flow. Nothing is lost — items, prices, history and QR codes stay.
+⚑ = decision the owner did not make.
+
+- **A flag, not a status.** `WorkOrder.archivedAt` (same family as `inVanAt` /
+  `calledAt`). The order status is still derived from the items by `_recompute`,
+  so restoring is lossless (V kombi, Klicano, `vanOrder` come back untouched).
+  `WorkOrder.isArchived`, and `isActive` = `status.isOpen && !isArchived`.
+- **Rule for new code:** any list, counter or alert that shows work in progress
+  uses `order.isActive` (or `OrderPhase.containsOrder`, `phaseCounts`,
+  `groupsFor`, which already do) — **never `status.isOpen` on its own**, it knows
+  nothing about the archive. `isInVan`, `isPickupOverdue` and `isOverdue` return
+  false for archived orders. `AppState.ordersOf` (customer history) leaves them
+  out; `AppState.archivedOrders` lists them (by ID, `compareOrderIds`).
+- **Repository:** `archiveOrder` / `unarchiveOrder` (both return bool). `advance`
+  and `markCalled` ignore archived orders, so a scan can't move their items.
+- **Gone from:** all five Naročila tabs and their counters, the Danes blocks
+  (`todayPickups`, `todayDeliveries`, `actionNeeded`), the bell (`buildAlerts`
+  filters at its entry), the scanner work lists, `productionCountsProvider`,
+  Statistika (revenue and active count), customer history and counters.
+- **UI:** order detail → small grey **Premakni v arhiv** at the very bottom of the
+  scroll (styled like "Zaključi brez podpisa"), dialog "Premakni naročilo v
+  arhiv?", then back to the first screen with an undo snackbar
+  (`archive_actions.dart`; written only after the detail screen has closed, same
+  pattern as delete). An archived order's detail is read-only with a banner and
+  **Vrni iz arhiva**. **Več → Arhiv** (`ui/more/archive_screen.dart`) has search
+  (reuses `matchesSearch`: ID, name, phone — and also address and rug ID) and a
+  **Vrni iz arhiva** per row (no confirm: restoring is harmless; undo snackbar).
+  Scanning a rug of an archived order flashes "… je v arhivu (Več → Arhiv)" and
+  does nothing else. `showUndoSnackBarOn` is a new variant taking a messenger.
+- ⚑ **Every employee can archive and restore**, not only admins — the ticket asks
+  for admin-*style*, not admin-only. To restrict it, gate the button in
+  `order_detail_screen.dart` and the `Arhiv` row in `more_screen.dart` on
+  `isAdmin`.
+- ⚑ **Only open orders can be archived.** A completed order is already in no
+  list, and archiving it would only subtract its revenue from Statistika.
+- ⚑ Archived orders also disappear from the customer profile (history, order
+  count, "Vrednost zaključenih"). `BackupScreen` still counts them: it is a
+  database overview, not a workflow view.
+- ⚑ Only `archivedAt` is stored — not *who* archived. Say so if the owner wants
+  that audit trail (a `archivedByName`, like `createdByName`).
+- **Firestore:** no migration and no rules change — old order documents have no
+  `archivedAt` and read as not archived; `orders/{id}` is already writable by any
+  signed-in employee. **Not verified against live Firebase.**
+- **Tests:** `test/archive_test.dart` (18: repository behaviour, every live view,
+  alerts, persistence, Arhiv screen incl. search/restore/undo, order detail,
+  Statistika). **Not verified on a device** — visually unchecked: the bottom
+  action's spacing, the banner, the archived tile.
+- **Found while testing, not touched:** `RugDetailScreen`'s "Etiketa" card (a
+  `QrImageView`, which uses `LayoutBuilder`, inside `AppCard`'s `IntrinsicHeight`)
+  trips a debug-mode assertion ("LayoutBuilder does not support returning
+  intrinsic dimensions"). It fires without any archive involved, and no existing
+  test pumps that screen. Release builds skip the assert; check the QR size there.
+  For that reason the rug-detail archived banner / hidden action bar is untested.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.

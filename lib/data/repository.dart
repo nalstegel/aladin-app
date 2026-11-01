@@ -303,6 +303,32 @@ class Repository extends StateNotifier<AppState> {
     return true;
   }
 
+  /// Moves an open order to the archive: it disappears from every tab,
+  /// counter, alert and statistic, but nothing is deleted — items, prices,
+  /// history and QR codes stay, and the order status is still derived from
+  /// the items.
+  ///
+  /// Meant for old orders that were handed back in practice but never
+  /// completed in the app. A completed order is not archived: it is already in
+  /// no list, and archiving would only subtract its revenue from the
+  /// statistics. Returns false if the order doesn't exist, is already
+  /// archived or is completed.
+  bool archiveOrder(String orderId) {
+    final order = state.order(orderId);
+    if (order == null || order.isArchived || !order.status.isOpen) return false;
+    updateOrder(order.copyWith(archivedAt: DateTime.now()));
+    return true;
+  }
+
+  /// Restores an archived order to the workflow (archived by mistake). The
+  /// order is exactly as it was: same status, items, V kombi and Klicano.
+  bool unarchiveOrder(String orderId) {
+    final order = state.order(orderId);
+    if (order == null || !order.isArchived) return false;
+    updateOrder(order.copyWith(clearArchivedAt: true));
+    return true;
+  }
+
   /// Dodaj kos obstoječemu naročilu (stranka je prinesla še eno preprogo).
   RugItem addItemToOrder(String orderId) {
     final order = state.order(orderId);
@@ -434,7 +460,7 @@ class Repository extends StateNotifier<AppState> {
   /// pobrisal.
   void markCalled(String orderId) {
     final order = state.order(orderId);
-    if (order == null || order.calledAt != null) return;
+    if (order == null || order.calledAt != null || order.isArchived) return;
     if (order.status != OrderStatus.awaitingCollection) return;
     updateOrder(order.copyWith(calledAt: DateTime.now()));
   }
@@ -529,6 +555,8 @@ class Repository extends StateNotifier<AppState> {
   bool advance(String itemId, {String note = ''}) {
     final item = state.item(itemId);
     if (item == null) return false;
+    // An archived order is out of the workflow — a scan must not move it.
+    if (state.order(item.orderId)?.isArchived ?? false) return false;
     final next = nextStatusFor(item);
     if (next == null) return false;
     _saveItem(item.copyWith(

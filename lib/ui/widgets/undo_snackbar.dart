@@ -12,8 +12,18 @@ void showUndoSnackBar(
   BuildContext context,
   String message,
   VoidCallback onUndo,
+) =>
+    showUndoSnackBarOn(ScaffoldMessenger.of(context), message, onUndo);
+
+/// Same, but on an already captured [ScaffoldMessengerState]: for when the
+/// screen that triggered the action closes before the snackbar is shown (its
+/// context is no longer valid by then).
+void showUndoSnackBarOn(
+  ScaffoldMessengerState messenger,
+  String message,
+  VoidCallback onUndo,
 ) {
-  ScaffoldMessenger.of(context)
+  messenger
     ..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(

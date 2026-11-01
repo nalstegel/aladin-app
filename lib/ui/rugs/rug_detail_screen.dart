@@ -36,6 +36,8 @@ class RugDetailScreen extends ConsumerWidget {
     }
     final order = state.order(item.orderId);
     final color = AppColors.forRug(item.status);
+    // An item of an archived order is read-only (it returns with the order).
+    final archived = order?.isArchived ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -137,6 +139,26 @@ class RugDetailScreen extends ConsumerWidget {
               ),
             ),
           ],
+          if (archived) ...[
+            const SizedBox(height: 10),
+            AppCard(
+              borderColor: AppColors.textMuted.withValues(alpha: 0.4),
+              child: const Row(
+                children: [
+                  Icon(Icons.archive_outlined,
+                      size: 18, color: AppColors.textMuted),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Naročilo je v arhivu. Vrneš ga lahko v podrobnostih '
+                      'naročila ali v Več → Arhiv.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (item.condition.isNotEmpty) ...[
             const SizedBox(height: 10),
             AppCard(
@@ -161,7 +183,9 @@ class RugDetailScreen extends ConsumerWidget {
             'Mere in cena',
             // Popravek vrste, mer, doplačil in cene, ne da bi kos vračali v
             // Sušenje.
-            trailing: item.isMeasured && item.status != RugStatus.returned
+            trailing: item.isMeasured &&
+                    item.status != RugStatus.returned &&
+                    !archived
                 ? TextButton.icon(
                     onPressed: () => EditPricingSheet.show(context, item),
                     icon: const Icon(Icons.edit_outlined, size: 18),
@@ -280,7 +304,7 @@ class RugDetailScreen extends ConsumerWidget {
           ),
         ],
       ),
-      bottomNavigationBar: _actions(context, ref, item),
+      bottomNavigationBar: archived ? null : _actions(context, ref, item),
     );
   }
 

@@ -26,10 +26,12 @@ class WorkListScreen extends ConsumerWidget {
 
     // Kose zaključenih naročil izpustimo — sicer bi se seznam "Vrnjeno" z
     // vsakim zaključenim naročilom nezadržno daljšal.
+    // Items of archived orders are never listed.
     final items = state.items.where((i) {
       if (i.status != status) return false;
       final order = state.order(i.orderId);
       return order != null &&
+          !order.isArchived &&
           (order.status.isOpen || status == RugStatus.returned);
     }).toList()
       ..sort((a, b) => compareOrderIds(a.id, b.id));

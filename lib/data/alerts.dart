@@ -101,9 +101,11 @@ List<Alert> buildAlerts(
 }) {
   final list = <Alert>[];
   final today = DateTime(now.year, now.month, now.day);
+  // Archived orders are out of the workflow — no alerts about them.
+  final live = orders.where((o) => !o.isArchived).toList();
 
   // 1) Pripravljeno za osebni prevzem, 24 h brez klica.
-  final uncalled = orders
+  final uncalled = live
       .where(
         (o) =>
             o.status == OrderStatus.awaitingCollection &&
@@ -130,7 +132,7 @@ List<Alert> buildAlerts(
 
   // 2) Po koncu delovnika še kaj v kombiju.
   if (now.hour >= workdayEnd) {
-    final inVan = sortedForVan(orders.where((o) => o.isInVan));
+    final inVan = sortedForVan(live.where((o) => o.isInVan));
     if (inVan.isNotEmpty) {
       list.add(Alert(
         id: 'van:${_day(now)}:${inVan.length}',
@@ -145,7 +147,7 @@ List<Alert> buildAlerts(
 
   // 3) Dnevni povzetek (opcijsko): ena vrstica na dan, število se osvežuje.
   bool notAfterToday(DateTime d) => d.isBefore(today.add(const Duration(days: 1)));
-  final pickups = orders
+  final pickups = live
       .where(
         (o) =>
             o.status == OrderStatus.scheduledPickup &&
@@ -153,7 +155,7 @@ List<Alert> buildAlerts(
             notAfterToday(o.pickupAt!),
       )
       .length;
-  final deliveries = orders
+  final deliveries = live
       .where(
         (o) =>
             o.status == OrderStatus.awaitingDelivery &&

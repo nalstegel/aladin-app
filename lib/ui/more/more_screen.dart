@@ -5,6 +5,7 @@ import '../../data/providers.dart';
 import '../widgets/common.dart';
 import 'about_screen.dart';
 import 'app_settings_screen.dart';
+import 'archive_screen.dart';
 import 'backup_screen.dart';
 import 'extras_screen.dart';
 import 'manual_screen.dart';
@@ -47,6 +48,11 @@ class MoreScreen extends ConsumerWidget {
                   icon: Icons.local_offer_outlined,
                   label: 'Cenik',
                   onTap: () => open(const ExtrasScreen()),
+                ),
+                MenuRow(
+                  icon: Icons.archive_outlined,
+                  label: 'Arhiv',
+                  onTap: () => open(const ArchiveScreen()),
                 ),
                 if (isAdmin)
                   MenuRow(
