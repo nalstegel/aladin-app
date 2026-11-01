@@ -341,16 +341,25 @@ class _FilterSheet extends ConsumerWidget {
 }
 
 /// Zavihek "Naročila": cela naročila, ki še niso prišla v proces — v praksi
-/// skoraj vedno naši planirani prevzemi. Najmanjši ID zgoraj.
-class _IntakeList extends ConsumerWidget {
+/// skoraj vedno naši planirani prevzemi. Najmanjši ID zgoraj. Filtri regij
+/// Vse / LJ / MB / CE / DOL so enaki kot v Pripravljeno in samo omejijo seznam.
+class _IntakeList extends ConsumerStatefulWidget {
   const _IntakeList();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_IntakeList> createState() => _IntakeListState();
+}
+
+class _IntakeListState extends ConsumerState<_IntakeList> {
+  /// null = Vse.
+  OrderLocation? _region;
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(repositoryProvider);
     final filter = ref.watch(orderFilterProvider);
 
-    final list =
+    final all =
         state.orders
             .where((o) => filter.channel == null || o.channel == filter.channel)
             .where(
@@ -359,29 +368,45 @@ class _IntakeList extends ConsumerWidget {
             .toList()
           ..sort((a, b) => compareOrderIds(a.id, b.id));
 
-    if (list.isEmpty) {
+    if (all.isEmpty) {
       return _empty(
         filter,
         'Ni novih naročil',
         'Novo naročilo ustvariš z Hitrim vnosom na zavihku Danes.',
       );
     }
+
+    final list = all
+        .where((o) => _region == null || o.location == _region)
+        .toList();
     return Column(
       children: [
+        RegionFilterBar(
+          selected: _region,
+          onSelected: (r) => setState(() => _region = r),
+          total: all.length,
+          countOf: (l) => all.where((o) => o.location == l).length,
+        ),
         UnitCaption(Fmt.orders(list.length)),
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-            itemCount: list.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (_, i) => OrderCard(
-              list[i],
-              action: OrderCardAction(
-                label: 'Prevzeto',
-                onPressed: () => startPickup(context, list[i]),
-              ),
-            ),
-          ),
+          child: list.isEmpty
+              ? EmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Ni novih naročil',
+                  message: 'V regiji ${_region!.code} ni novih naročil.',
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                  itemCount: list.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) => OrderCard(
+                    list[i],
+                    action: OrderCardAction(
+                      label: 'Prevzeto',
+                      onPressed: () => startPickup(context, list[i]),
+                    ),
+                  ),
+                ),
         ),
       ],
     );

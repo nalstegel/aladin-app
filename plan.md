@@ -1294,6 +1294,39 @@ delo, Dodatna statistika. Še vedno samo za administratorje (vrstica v Več).
   prelivanja). **Ni preverjeno na napravi:** vizualno nič — razmik ploščic, videz
   celic starosti, vrstice razrezov z deležem.
 
+### 4.19 — Regijski filtri v Naročila, trije zavihki v Pripravljeno — DONE v kodi (2026-11-01)
+Ticket „Naročila / Pripravljeno". Samo UI (`ui/orders/orders_screen.dart`,
+`ui/orders/ready_lists.dart`); modeli, `Repository` in `order_phases.dart` se niso
+spremenili. ⚑ = odločitev, ki je ni podal lastnik.
+
+- **Naročila** (prvi zavihek strani, `_IntakeList`): zgoraj iste pilule Vse / LJ / MB /
+  CE / DOL kot v Pripravljeno in Dostave (`RegionFilterBar`). Filter samo omeji seznam;
+  stanje je lokalno v zavihku (kot v Pripravljeno), ne v `orderFilterProvider`. „DL" iz
+  ticketa je v aplikaciji „DOL" (kot §4.17 in §4.18).
+- **Pripravljeno** (`ReadyList`): regijski filtri ostanejo na vrhu, pod njimi so namesto
+  accordion sekcij trije zavihki **Za dostavo | Ni klicano | Klicano** (`ReadyTab`).
+  Tap zamenja seznam takoj; vsak zavihek ima števec; prazen zavihek ni skrit (števec 0).
+  `readyOpenSectionsProvider` in `_ReadySection` sta odstranjena.
+  - **Regija × zavihek:** števci zavihkov so števci *izbrane regije*, da število
+    ustreza temu, kar se po tapu pokaže (LJ + Ni klicano = samo neklicane LJ stranke).
+    Števci pri regijskih pilulah pa so še vedno čez vse tri zavihke.
+  - ⚑ **Ni `TabBar`/`TabBarView`**: zunanji `TabBarView` strani Naročila bi se pri
+    vodoravnem drsanju tepel z notranjim. Zavihki so tap-only segmentirana vrstica
+    (`_ReadyTabBar`). Izbran zavihek je v `readyTabProvider` in ostane, ko zamenjaš
+    zavihek strani; regija pa se (kot prej) ponastavi.
+  - ⚑ Privzeto je izbran **Za dostavo** (prvi v ticketu). Zavihek *Klicano* je prej
+    imel napis „Klicano · čaka stranko"; vrstica naročila to še vedno izpiše.
+  - Vrstice so zdaj samostojne kartice (`AppCard`) v lenem `ListView`, ne ena kartica
+    z razdelilniki. Znotraj zavihka velja ID, najmanjši zgoraj (§4.14).
+  - Celotna praznina (nobenega pripravljenega naročila) ostane „Nič ni pripravljeno" brez
+    filtrov; prazen zavihek / regija pove „Ni neklicanih strank" ... / „V regiji CE ni
+    takih naročil.", filtri in zavihki pa ostanejo, da lahko takoj zamenjaš.
+- **Testi:** `test/v10_widgets_test.dart` — skupina Pripravljeno prepisana (števci,
+  takojšnja zamenjava, vrstni red filtri → zavihki → seznam, zavihek ostane, regija ×
+  zavihek, prazno v regiji, klic premakne iz Ni klicano v Klicano, ID-red, Razveljavi);
+  v skupini Naročila nov test regijskih filtrov. **Ni preverjeno na napravi:** videz
+  segmentirane vrstice na ozkem telefonu.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.
