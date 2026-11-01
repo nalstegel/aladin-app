@@ -39,7 +39,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final pickups = ref.watch(todayPickupsProvider);
     final deliveries = ref.watch(todayDeliveriesProvider);
     final state = ref.watch(repositoryProvider);
-    final counts = phaseCounts(state);
+    final counts = phaseCounts(state, now: ref.watch(todayProvider));
     final action = ref.watch(actionNeededProvider);
     final unread = ref.watch(unreadAlertCountProvider);
 
@@ -97,7 +97,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       empty: 'Danes ni vračil.',
                       overflowPhase: OrderPhase.deliveries,
                       subtitle: (o) => [
-                        if (o.deliveryAt != null) Fmt.time(o.deliveryAt),
+                        if (o.deliveryAt != null)
+                          Fmt.timeRange(o.deliveryAt, o.deliveryWindowEnd),
                         if (o.customerAddress.isNotEmpty) o.customerAddress,
                       ].join(' · '),
                       actionLabel: 'Vrni',

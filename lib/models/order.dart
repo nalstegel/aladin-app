@@ -37,8 +37,14 @@ class WorkOrder {
   /// termin ni bil izbran prek okenc.
   final DateTime? pickupWindowEnd;
 
-  /// Za dostavo: dogovorjen termin vračila.
+  /// Za dostavo: dogovorjen termin vračila — začetek časovnega okna (datum in
+  /// ura). Od tega dne naprej je naročilo v zavihku Dostave (glej
+  /// [isDeliveryDay]); brez termina ostane v Pripravljeno.
   final DateTime? deliveryAt;
+
+  /// Konec časovnega okna vračila (glej [deliveryAt]), vedno isti dan kot
+  /// začetek. Null = samo ura začetka.
+  final DateTime? deliveryWindowEnd;
 
   /// Obljubljen rok, do kdaj naj bo naročilo gotovo.
   final DateTime? dueAt;
@@ -97,6 +103,7 @@ class WorkOrder {
     this.pickupAt,
     this.pickupWindowEnd,
     this.deliveryAt,
+    this.deliveryWindowEnd,
     this.dueAt,
     this.notes = '',
     required this.createdAt,
@@ -138,6 +145,23 @@ class WorkOrder {
   bool get isInVan =>
       status == OrderStatus.awaitingDelivery && inVanAt != null && !isArchived;
 
+  /// Dogovorjeni dan vračila je danes ali je že mimo, naročilo pa je še
+  /// pripravljeno za dostavo. Zamujena dostava ostane na seznamu, dokler ni
+  /// predana — drugače bi se po polnoči tiho vrnila v Pripravljeno.
+  ///
+  /// Šteje samo koledarski dan, ne ura: zjutraj mora biti na seznamu vse, kar
+  /// ta dan peljemo.
+  bool isDeliveryDay(DateTime now) {
+    if (status != OrderStatus.awaitingDelivery || isArchived) return false;
+    final at = deliveryAt;
+    if (at == null) return false;
+    return at.isBefore(DateTime(now.year, now.month, now.day + 1));
+  }
+
+  /// Naročilo je v zavihku Dostave: ima danes dogovorjeno vračilo ali pa so
+  /// ga ročno označili V kombi. Kombi ni pogoj — zadošča dogovorjen termin.
+  bool isInDeliveries(DateTime now) => isInVan || isDeliveryDay(now);
+
   /// Nevsiljiv interni opomnik, kdaj naj bi bilo naročilo vrnjeno (privzeto
   /// 10 dni po pripravljenosti). Ni alarm — samo siva opomba na seznamu.
   DateTime? get returnReminderAt =>
@@ -155,6 +179,7 @@ class WorkOrder {
     DateTime? pickupAt,
     DateTime? pickupWindowEnd,
     DateTime? deliveryAt,
+    DateTime? deliveryWindowEnd,
     DateTime? dueAt,
     String? notes,
     DateTime? readyAt,
@@ -173,6 +198,8 @@ class WorkOrder {
     bool clearPickupAt = false,
     bool clearPickupWindowEnd = false,
     bool clearDeliveryAt = false,
+    bool clearDeliveryWindowEnd = false,
+    bool clearVanOrder = false,
     bool clearDueAt = false,
   }) {
     return WorkOrder(
@@ -191,6 +218,9 @@ class WorkOrder {
           ? null
           : (pickupWindowEnd ?? this.pickupWindowEnd),
       deliveryAt: clearDeliveryAt ? null : (deliveryAt ?? this.deliveryAt),
+      deliveryWindowEnd: clearDeliveryWindowEnd
+          ? null
+          : (deliveryWindowEnd ?? this.deliveryWindowEnd),
       dueAt: clearDueAt ? null : (dueAt ?? this.dueAt),
       notes: notes ?? this.notes,
       createdAt: createdAt,
@@ -202,7 +232,8 @@ class WorkOrder {
       orderExtras: orderExtras ?? this.orderExtras,
       inVanAt: clearInVanAt ? null : (inVanAt ?? this.inVanAt),
       calledAt: clearCalledAt ? null : (calledAt ?? this.calledAt),
-      vanOrder: clearInVanAt ? null : (vanOrder ?? this.vanOrder),
+      vanOrder:
+          clearInVanAt || clearVanOrder ? null : (vanOrder ?? this.vanOrder),
       archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     );
   }
@@ -221,6 +252,7 @@ class WorkOrder {
         'pickupAt': pickupAt?.toIso8601String(),
         'pickupWindowEnd': pickupWindowEnd?.toIso8601String(),
         'deliveryAt': deliveryAt?.toIso8601String(),
+        'deliveryWindowEnd': deliveryWindowEnd?.toIso8601String(),
         'dueAt': dueAt?.toIso8601String(),
         'notes': notes,
         'createdAt': createdAt.toIso8601String(),
@@ -256,6 +288,7 @@ class WorkOrder {
       pickupAt: d('pickupAt'),
       pickupWindowEnd: d('pickupWindowEnd'),
       deliveryAt: d('deliveryAt'),
+      deliveryWindowEnd: d('deliveryWindowEnd'),
       dueAt: d('dueAt'),
       notes: j['notes'] as String? ?? '',
       createdAt: DateTime.parse(j['createdAt'] as String),

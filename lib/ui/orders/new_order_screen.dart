@@ -12,6 +12,7 @@ import '../widgets/pickup_window_picker.dart';
 import '../widgets/delivery_fee_stepper.dart';
 import 'labels_screen.dart';
 import 'pickup_sheet.dart';
+import 'return_term_sheet.dart';
 
 /// Sprejem naročila. Isti obrazec za vse tri kanale — razlikujejo se
 /// samo termini in način predaje.
@@ -42,6 +43,7 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
   TimeOfDay? _pickupStart;
   TimeOfDay? _pickupEnd;
   DateTime? _deliveryAt;
+  DateTime? _deliveryWindowEnd;
   DateTime? _dueAt;
   final _search = TextEditingController();
   final _notes = TextEditingController();
@@ -536,11 +538,13 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
             icon: Icons.event_available_outlined,
           ),
           if (_handover == HandoverMode.weDeliver)
-            _dateTile(
-              'Dogovorjeno vračilo',
-              _deliveryAt,
-              (d) => setState(() => _deliveryAt = d),
-              icon: Icons.home_outlined,
+            ReturnTermTile(
+              start: _deliveryAt,
+              end: _deliveryWindowEnd,
+              onChanged: (c) => setState(() {
+                _deliveryAt = c.start;
+                _deliveryWindowEnd = c.end;
+              }),
             ),
           const Divider(height: 20),
           Row(
@@ -643,6 +647,8 @@ class _NewOrderScreenState extends ConsumerState<NewOrderScreen> {
           _channel == OrderChannel.dropoff ? null : _pickupWindowEnd,
       deliveryAt:
           _handover == HandoverMode.weDeliver ? _deliveryAt : null,
+      deliveryWindowEnd:
+          _handover == HandoverMode.weDeliver ? _deliveryWindowEnd : null,
       dueAt: _dueAt,
       deliveryFee: _channel == OrderChannel.dropoff ? 0 : _deliveryFee,
       notes: _notes.text,

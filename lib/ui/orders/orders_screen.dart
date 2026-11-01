@@ -64,6 +64,8 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen>
     final counts = phaseCounts(
       ref.watch(repositoryProvider),
       channel: filter.channel,
+      // Števca Pripravljeno in Dostave se ob polnoči sama prerazporedita.
+      now: ref.watch(todayProvider),
     );
 
     // Bližnjice z Danes (blok Delavnica) odprejo ustrezen zavihek.
@@ -611,6 +613,7 @@ class _SearchResults extends ConsumerWidget {
     }
 
     final q = foldForSearch(query);
+    final today = ref.watch(todayProvider);
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
       itemCount: results.length,
@@ -630,7 +633,7 @@ class _SearchResults extends ConsumerWidget {
         }.toList();
         final phases = itemPhases.isNotEmpty
             ? itemPhases
-            : phasesOf(order, items);
+            : phasesOf(order, items, now: today);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

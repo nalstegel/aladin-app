@@ -130,8 +130,17 @@ bound to an `AppUser` via `Repository.bindAuthUser`) → `AppShell`.
   and arrive pre-selected in Hitri obračun.
 - **V kombi is a flag** (`WorkOrder.inVanAt`), not a status — the order stays
   `awaitingDelivery`; `_recompute` clears it when the order leaves that state.
-  Same for `calledAt` (Klicano). Pripravljeno excludes in-van orders; Dostave
-  contains only them.
+  Same for `calledAt` (Klicano). It is now only the manual way into Dostave —
+  see "Planirana dostava" below.
+- **Planirana dostava (plan.md §4.16).** Dostave = `WorkOrder.isInDeliveries(now)`:
+  an `awaitingDelivery` order whose agreed return day (`deliveryAt`, set via
+  Rok → Uredi / `Repository.setReturnTerm`) is today or earlier, **or** one
+  marked V kombi. There is no "planned" status: the move out of Pripravljeno is
+  derived from the date, so any list or counter that splits Pripravljeno from
+  Dostave must use `containsOrder(…, now:)` / `isInDeliveries`, never `isInVan`
+  alone. "Stranka pride po preproge" orders never get a term. A widget test that
+  renders Pripravljeno, Dostave, Naročila or Danes must override
+  `minuteClockProvider` with `Stream.value(...)` (else "Timer is still pending").
 - **Order total = `billingFor()`** (`data/billing.dart`): items + order extras
   + delivery fee + minimum-50 € top-up (only channel `delivery`, only once all
   items are priced). Use it, never sum `item.price` by hand.

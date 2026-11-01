@@ -155,14 +155,7 @@ List<Alert> buildAlerts(
             notAfterToday(o.pickupAt!),
       )
       .length;
-  final deliveries = live
-      .where(
-        (o) =>
-            o.status == OrderStatus.awaitingDelivery &&
-            (o.inVanAt != null ||
-                (o.deliveryAt != null && notAfterToday(o.deliveryAt!))),
-      )
-      .length;
+  final deliveries = live.where((o) => o.isInDeliveries(now)).length;
   if (pickups + deliveries > 0) {
     list.add(Alert(
       id: 'today:${_day(now)}',
@@ -177,14 +170,6 @@ List<Alert> buildAlerts(
   list.sort((a, b) => b.at.compareTo(a.at));
   return list;
 }
-
-/// Ura, ki se osveži vsako minuto — obvestila so odvisna od časa (24 h, konec
-/// delovnika), zato se sama od sebe ne smejo ustaviti, ko se podatki ne
-/// spremenijo.
-final minuteClockProvider = StreamProvider<DateTime>((ref) async* {
-  yield DateTime.now();
-  yield* Stream.periodic(const Duration(minutes: 1), (_) => DateTime.now());
-});
 
 final alertsProvider = Provider<List<Alert>>((ref) {
   final state = ref.watch(repositoryProvider);

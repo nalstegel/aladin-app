@@ -13,6 +13,7 @@ import '../widgets/common.dart';
 import '../widgets/delivery_fee_stepper.dart';
 import '../widgets/extra_choice.dart';
 import '../widgets/pickup_window_picker.dart';
+import 'return_term_sheet.dart';
 
 /// Urejanje podatkov obstoječega naročila (stranka, kanal, termini,
 /// doplačila prevzema, opomba). Območje se ne spreminja — določilo je
@@ -37,6 +38,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
   TimeOfDay? _pickupStart;
   TimeOfDay? _pickupEnd;
   DateTime? _deliveryAt;
+  DateTime? _deliveryWindowEnd;
   DateTime? _dueAt;
   late double _deliveryFee;
 
@@ -65,6 +67,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
         ? null
         : TimeOfDay.fromDateTime(order.pickupWindowEnd!);
     _deliveryAt = order.deliveryAt;
+    _deliveryWindowEnd = order.deliveryWindowEnd;
     _dueAt = order.dueAt;
     _deliveryFee = order.deliveryFee;
     _orderExtraNames = {for (final e in order.orderExtras) e.name};
@@ -387,11 +390,13 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
             icon: Icons.event_available_outlined,
           ),
           if (_handover == HandoverMode.weDeliver)
-            _dateTile(
-              'Dogovorjeno vračilo',
-              _deliveryAt,
-              (d) => setState(() => _deliveryAt = d),
-              icon: Icons.home_outlined,
+            ReturnTermTile(
+              start: _deliveryAt,
+              end: _deliveryWindowEnd,
+              onChanged: (c) => setState(() {
+                _deliveryAt = c.start;
+                _deliveryWindowEnd = c.end;
+              }),
             ),
           const Divider(height: 20),
           Row(
@@ -488,6 +493,7 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
     final pickupWindowEnd = includePickup ? _pickupWindowEnd : null;
     final deliveryAt =
         _handover == HandoverMode.weDeliver ? _deliveryAt : null;
+    final deliveryWindowEnd = deliveryAt == null ? null : _deliveryWindowEnd;
 
     final templates = _orderExtraTemplates();
     final offered = {for (final t in templates) t.name};
@@ -513,6 +519,8 @@ class _EditOrderScreenState extends ConsumerState<EditOrderScreen> {
       clearPickupWindowEnd: pickupWindowEnd == null,
       deliveryAt: deliveryAt,
       clearDeliveryAt: deliveryAt == null,
+      deliveryWindowEnd: deliveryWindowEnd,
+      clearDeliveryWindowEnd: deliveryWindowEnd == null,
       dueAt: _dueAt,
       clearDueAt: _dueAt == null,
       deliveryFee: _channel == OrderChannel.dropoff ? 0 : _deliveryFee,

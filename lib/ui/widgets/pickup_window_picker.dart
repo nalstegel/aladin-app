@@ -30,7 +30,17 @@ class PickupWindowPicker extends StatelessWidget {
     this.start,
     this.end,
     required this.onWindowChanged,
+    this.dateLabel = 'Datum prevzema',
+    this.firstDate,
   });
+
+  /// Napis ob datumu — ista kontrola služi prevzemu in vračilu.
+  final String dateLabel;
+
+  /// Najzgodnejši izbirljiv dan; privzeto teden dni nazaj. Zaradi vračila ga je
+  /// mogoče zaostriti na danes: dogovorjenega dne v preteklosti ni smiselno
+  /// vpisati.
+  final DateTime? firstDate;
 
   final DateTime date;
   final ValueChanged<DateTime> onDateChanged;
@@ -59,7 +69,7 @@ class PickupWindowPicker extends StatelessWidget {
                   color: AppColors.textMuted,
                 ),
                 const SizedBox(width: 8),
-                const Text('Datum prevzema', style: TextStyle(fontSize: 14)),
+                Text(dateLabel, style: const TextStyle(fontSize: 14)),
                 const Spacer(),
                 Text(
                   Fmt.dateShort(date),
@@ -147,10 +157,12 @@ class PickupWindowPicker extends StatelessWidget {
 
   Future<void> _pickDate(BuildContext context) async {
     final now = DateTime.now();
+    // initialDate ne sme biti pred firstDate (showDatePicker bi padel).
+    final first = firstDate ?? now.subtract(const Duration(days: 7));
     final picked = await showDatePicker(
       context: context,
-      initialDate: date,
-      firstDate: now.subtract(const Duration(days: 7)),
+      initialDate: date.isBefore(first) ? first : date,
+      firstDate: first,
       lastDate: now.add(const Duration(days: 365)),
     );
     if (picked != null) onDateChanged(picked);

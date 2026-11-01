@@ -209,6 +209,7 @@ class Repository extends StateNotifier<AppState> {
     DateTime? pickupAt,
     DateTime? pickupWindowEnd,
     DateTime? deliveryAt,
+    DateTime? deliveryWindowEnd,
     DateTime? dueAt,
     double deliveryFee = 0,
     String notes = '',
@@ -237,6 +238,7 @@ class Repository extends StateNotifier<AppState> {
       pickupAt: pickupAt,
       pickupWindowEnd: pickupWindowEnd,
       deliveryAt: deliveryAt,
+      deliveryWindowEnd: deliveryAt == null ? null : deliveryWindowEnd,
       dueAt: dueAt,
       deliveryFee: deliveryFee,
       notes: notes.trim(),
@@ -465,9 +467,55 @@ class Repository extends StateNotifier<AppState> {
     updateOrder(order.copyWith(calledAt: DateTime.now()));
   }
 
+  /// Dogovorjen termin vračila (ko stranko pokličemo in se zmenimo za dan in
+  /// uro) ali, ko je [start] null, njegova odstranitev.
+  ///
+  /// Status se ne spremeni in novega statusa ni: naročilo je do dogovorjenega
+  /// dne v Pripravljeno, ta dan pa se samo pokaže v Dostavah
+  /// (`WorkOrder.isDeliveryDay`). Ker se premik izpelje iz datuma, ga sprememba
+  /// datuma sama prestavi, odstranjen termin pa naročila ne premakne nikamor.
+  ///
+  /// Samo za naročila, ki jih vračamo mi — pri "Stranka pride po preproge" ta
+  /// logika ne velja. [end] je konec časovnega okna istega dne; neveljaven
+  /// (pred začetkom ali drug dan) se zavrže. Vrne false, če termin ni bil
+  /// zapisan.
+  bool setReturnTerm(String orderId, {DateTime? start, DateTime? end}) {
+    final order = state.order(orderId);
+    if (order == null || !order.isActive) return false;
+    if (order.handover != HandoverMode.weDeliver) return false;
+
+    if (start == null) {
+      updateOrder(order.copyWith(
+        clearDeliveryAt: true,
+        clearDeliveryWindowEnd: true,
+        clearVanOrder: order.inVanAt == null,
+      ));
+      return true;
+    }
+    final validEnd = end != null && !end.isBefore(start) && _sameDay(start, end);
+    updateOrder(order.copyWith(
+      deliveryAt: start,
+      deliveryWindowEnd: validEnd ? end : null,
+      clearDeliveryWindowEnd: !validEnd,
+      // Nov dan je nova pot: star ročni vrstni red ne sme prehiteti ostalih.
+      clearVanOrder: order.inVanAt == null && !_sameDay(order.deliveryAt, start),
+    ));
+    return true;
+  }
+
+  static bool _sameDay(DateTime? a, DateTime? b) =>
+      a != null &&
+      b != null &&
+      a.year == b.year &&
+      a.month == b.month &&
+      a.day == b.day;
+
   /// Naročilo za dostavo gre v kombi → prestavi se v zavihek Dostave. Dobi
   /// mesto po ID-ju; šele ko uporabnik ročno uredi vrstni red (`reorderVan`),
   /// dobi številko `vanOrder` in se novo naročilo uvrsti za ročno urejena.
+  ///
+  /// To je ročna pot za naročila brez dogovorjenega termina; kombi ni pogoj za
+  /// Dostave (glej [setReturnTerm]).
   void sendToVan(String orderId) {
     final order = state.order(orderId);
     if (order == null || order.status != OrderStatus.awaitingDelivery) return;
@@ -480,7 +528,8 @@ class Repository extends StateNotifier<AppState> {
   /// MB) je to podmnožica. Zasedejo natanko tista mesta v celotnem vrstnem
   /// redu, ki so jih imela prej, zato ostalih regij ne premešajo.
   void reorderVan(List<String> orderedIds) {
-    final all = sortedForVan(state.orders.where((o) => o.isInVan))
+    final now = DateTime.now();
+    final all = sortedForVan(state.orders.where((o) => o.isInDeliveries(now)))
         .map((o) => o.id)
         .toList();
     final moved = orderedIds.where(all.contains).toList();
