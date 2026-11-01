@@ -109,7 +109,9 @@ class _DataGateState extends ConsumerState<_DataGate> {
         );
     // Naročnino na obvestila obnovimo šele po prijavi — odjavljen telefon
     // ne sme dobivati obvestil o naročilih.
-    await ref.read(pushServiceProvider).restore();
+    await ref.read(pushServiceProvider).restore(
+          isAdmin: ref.read(currentUserProvider)?.isAdmin ?? false,
+        );
   }
 
   @override

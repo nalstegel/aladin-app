@@ -1,0 +1,59 @@
+[
+  {
+    "name": "dropoff: computed from area, no minimum top-up",
+    "order": {"id": "LJ-001", "channel": "dropoff", "handover": "customerCollects", "status": "completed", "customerId": "c1", "customerName": "A", "itemCount": 1, "createdAt": "2026-10-01T09:00:00"},
+    "items": [
+      {"id": "LJ-001-1", "orderId": "LJ-001", "index": 1, "ofTotal": 1, "status": "returned", "widthCm": 200, "lengthCm": 300, "pricePerM2": 10, "minChargeM2": 1}
+    ],
+    "total": 60
+  },
+  {
+    "name": "delivery: tops up to the 50 EUR minimum once all items are priced",
+    "order": {"id": "LJ-002", "channel": "delivery", "handover": "weDeliver", "status": "awaitingDelivery", "customerId": "c1", "customerName": "A", "itemCount": 1, "createdAt": "2026-10-01T09:00:00"},
+    "items": [
+      {"id": "LJ-002-1", "orderId": "LJ-002", "index": 1, "ofTotal": 1, "status": "ready", "widthCm": 100, "lengthCm": 100, "pricePerM2": 8, "minChargeM2": 0}
+    ],
+    "total": 50
+  },
+  {
+    "name": "delivery: fee and order-level extras count, percent extra is 0 at order level",
+    "order": {"id": "LJ-003", "channel": "delivery", "handover": "weDeliver", "status": "awaitingDelivery", "customerId": "c1", "customerName": "A", "itemCount": 1, "createdAt": "2026-10-01T09:00:00", "deliveryFee": 15, "orderExtras": [{"name": "Vnos", "kind": "fixed", "value": 10}, {"name": "Iznos", "kind": "percent", "value": 10}]},
+    "items": [
+      {"id": "LJ-003-1", "orderId": "LJ-003", "index": 1, "ofTotal": 1, "status": "ready", "confirmedPrice": 40}
+    ],
+    "total": 65
+  },
+  {
+    "name": "minimum area, per-m2 + percent + fixed extras, then discount",
+    "order": {"id": "MB-001", "location": "maribor", "channel": "dropoff", "handover": "customerCollects", "status": "awaitingCollection", "customerId": "c2", "customerName": "B", "itemCount": 1, "createdAt": "2026-10-01T09:00:00"},
+    "items": [
+      {"id": "MB-001-1", "orderId": "MB-001", "index": 1, "ofTotal": 1, "status": "ready", "widthCm": 50, "lengthCm": 60, "pricePerM2": 12, "minChargeM2": 1, "discountPercent": 10, "extras": [{"name": "Urin", "kind": "perM2", "value": 3}, {"name": "Hitro", "kind": "percent", "value": 10}, {"name": "Dlake", "kind": "fixed", "value": 2}]}
+    ],
+    "total": 16.38
+  },
+  {
+    "name": "manual m2 wins over width x length; exactly 50 EUR needs no top-up",
+    "order": {"id": "LJ-004", "channel": "delivery", "handover": "weDeliver", "status": "awaitingDelivery", "customerId": "c1", "customerName": "A", "itemCount": 1, "createdAt": "2026-10-01T09:00:00"},
+    "items": [
+      {"id": "LJ-004-1", "orderId": "LJ-004", "index": 1, "ofTotal": 1, "status": "ready", "manualM2": 2.5, "widthCm": 10, "lengthCm": 10, "pricePerM2": 20, "minChargeM2": 1}
+    ],
+    "total": 50
+  },
+  {
+    "name": "delivery: no top-up while an item is still unpriced",
+    "order": {"id": "LJ-005", "channel": "delivery", "handover": "weDeliver", "status": "inProduction", "customerId": "c1", "customerName": "A", "itemCount": 2, "createdAt": "2026-10-01T09:00:00"},
+    "items": [
+      {"id": "LJ-005-1", "orderId": "LJ-005", "index": 1, "ofTotal": 2, "status": "ready", "confirmedPrice": 10},
+      {"id": "LJ-005-2", "orderId": "LJ-005", "index": 2, "ofTotal": 2, "status": "awaitingWash"}
+    ],
+    "total": 10
+  },
+  {
+    "name": "confirmed price overrides the computed one",
+    "order": {"id": "LJ-006", "channel": "dropoff", "handover": "customerCollects", "status": "completed", "customerId": "c1", "customerName": "A", "itemCount": 1, "createdAt": "2026-10-01T09:00:00"},
+    "items": [
+      {"id": "LJ-006-1", "orderId": "LJ-006", "index": 1, "ofTotal": 1, "status": "returned", "widthCm": 100, "lengthCm": 100, "pricePerM2": 10, "confirmedPrice": 7.5}
+    ],
+    "total": 7.5
+  }
+]

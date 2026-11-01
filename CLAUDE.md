@@ -71,7 +71,7 @@ lib/
     store.dart         DataStore abstract interface — the backend abstraction
     auth.dart          AuthService (Firebase email/password sign-in)
     alerts.dart        bell alerts derived from order state; seen-state per device
-    push.dart          FCM, topic-based (see functions/)
+    push.dart          FCM, topic-based: `zaposleni` (all) + `admini` (revenue summaries)
     navigation.dart    shell/orders tab providers, for cross-tab deep links
     seed.dart          demo data
     providers.dart     Riverpod providers built on repositoryProvider
@@ -199,9 +199,10 @@ bound to an `AppUser` via `Repository.bindAuthUser`) → `AppShell`.
 - Firestore/Storage security rules exist but must be deployed
   (`firebase deploy --only firestore:rules,storage`) — treat them as not-yet-live
   until confirmed.
-- Push notifications are written but **not functional**: Cloud Messaging isn't
-  enabled, the project isn't on Blaze, and `functions/` has never been deployed.
-  See `functions/README.md`. The in-app bell works regardless — it derives
+- Push notifications are written but **not functional**: the project isn't on
+  Blaze and `functions/` has never been deployed (that includes the daily /
+  weekly / monthly summaries, plan.md §4.17 — admins only, they carry revenue).
+  See `functions/README.md`; `npm test` in `functions/` runs its tests. The in-app bell works regardless — it derives
   alerts from data already in the database.
 - `ui/more/support_screen.dart` has empty contact constants. Nobody has supplied
   a support phone/email; the screen says so rather than inventing one.

@@ -1160,6 +1160,66 @@ dodatnega planiranja. **Brez novega statusa**: premik je izpeljan iz datuma.
   Izbira ure v sheetu (kolo `CupertinoDatePicker`) ni pokrita s testom widgeta;
   sheet z že izbranim terminom je.
 
+### 4.17 — Dnevni / tedenski / mesečni povzetek (potisna obvestila) — DONE v kodi (2026-11-01)
+Ticket „Add notifications (firebase)": trije nivoji povzetkov kot FCM obvestila iz
+Cloud Functions. **Ne deluje, dokler lastnik ne opravi korakov v
+`functions/README.md`** (Blaze, uvedba funkcij, nova Android različica).
+⚑ = odločitev, ki je ni podal lastnik.
+
+- **Kje:** `functions/summaries.js` (čist izračun, brez Firebase) + `index.js`
+  (`dailySummary` pon–sob 18:00, `weeklySummary` pon 8:00, `monthlySummary` 1. v
+  mesecu 8:30; vse `Europe/Ljubljana`, `europe-west3`). Seznam vrstic in točne
+  definicije so v `functions/README.md` („Povzetki: kaj točno se šteje").
+- ⚑ **Samo administratorji.** Povzetki vsebujejo promet in cene, Statistika pa je
+  skrita zaposlenim (PR #15), zato gredo na novo temo `admini`, ne na `zaposleni`.
+  `PushService.setEnabled/restore` zdaj vzameta `isAdmin` in ob vsakem zagonu
+  uskladita naročnino z vlogo (povišanje doda, degradacija odvzame). Ob odjavi se
+  telefon odjavi z obeh tem. Če lastnik hoče dnevni povzetek za vse: `ADMIN_TOPIC`
+  → `TOPIC` v `sendSummary` (vidni bodo zneski).
+- ⚑ **„Pripeljano" = kanal Pripeljano** (`OrderChannel.dropoff`, naročilo
+  ustvarjeno danes), ne „vse, kar je danes prišlo v obrat" — ker tudi mesečni
+  povzetek v ticketu govori „dostav vs pripeljano". Prevzemi z našim kombijem v
+  dnevni vrstici niso. Ena primerjava v `dailyStats`, če lastnik misli drugače.
+- ⚑ **m² je ob „Pripravljeno", ne ob „Oprano".** m² je znan šele ob merjenju po
+  sušenju, torej ko kos postane Pripravljeno; ob pranju ga ni. Dnevni „Oprano"
+  zato kaže samo kose, m² je v vrstici „Pripravljeno". Tedenski/mesečni „Oprano
+  m²" = m² kosov, ki so v obdobju prvič postali Pripravljeno.
+- ⚑ **Tok, ne kohorta.** Prejeto (po `createdAt`), vrnjeno/promet (po
+  `completedAt`), oprano (po prvem dogodku `ready` v `history`). Vsak podatek je
+  ob koncu obdobja dokončen, zato je primerjava s prejšnjim obdobjem poštena;
+  kohorta („naročila tega tedna, od tega vrnjenih") bi bila pristranska, ker bi
+  imel prejšnji teden več časa za dokončanje. „Še odprtih" je stanje zdaj.
+  Kos se šteje samo ob PRVEM dogodku (ročni popravek ga ne podvoji).
+- ⚑ **„Potrjena vrednost"** = cene kosov, potrjene v obdobju (brez dostave,
+  Vnos/Iznos in minimuma 50 €); „promet" je `billingFor` zaključenih naročil kot
+  v Statistiki. „Povprečna cena" = potrjene cene / m² istih kosov.
+- ⚑ **„DL" iz ticketa je v aplikaciji „DOL"** (`OrderLocation.code`).
+- ⚑ **Dnevni ne gre ob nedeljah** (kot ostali urniki, 1–6) in ga ni, če se ni
+  zgodilo nič in nič ne čaka. Tedenski je v ponedeljek zjutraj (cel teden pon–ned).
+- **Past: čas.** Telefoni zapišejo lokalni čas BREZ odmika (`toIso8601String()` na
+  lokalnem `DateTime`), strežnik teče v UTC. `summaries.js` vse pretvori v
+  „stensko uro" Ljubljane in računa samo na njej; datum ob polnoči bi bil sicer
+  napačen.
+- **Past: dva obračuna.** `orderTotal` v JS je prepis `billingFor()`. Isti primeri
+  (`functions/test/fixtures/pricing_cases.json`) tečejo v obeh jezikih:
+  `test/summary_pricing_test.dart` in `npm test`. Če spremeniš obračun, spremeni
+  oboje.
+- **Branje iz baze** (`loadSince`): vsa odprta naročila + zaključena od začetka
+  prejšnjega obdobja naprej + njihovi kosi (`orderId in`, po 30). Ne beremo vseh
+  zaključenih. Samo enopoljne poizvedbe — indeksov ni treba uvajati.
+- **Popravljeno ob tem v obstoječih funkcijah** (nikoli uvedene):
+  `orderReady`/`overdueCheck` sta brala `o.number`, ki v bazi ne obstaja (v Dartu
+  je getter; shranjen je `id`) — obvestilo bi se glasilo „undefined je
+  pripravljeno". Obe zdaj preskočita arhivirana naročila.
+- **Testi:** `functions/test/summaries.test.js` + `index.test.js` (17; lažni
+  Firestore, zamrznjena ura), `test/summary_pricing_test.dart` (8),
+  `test/push_topics_test.dart` (7, lažni `FirebaseMessaging`). **Ni preverjeno
+  na živem Firebase ali napravi:** nobena funkcija ni bila uvedena, nobeno
+  obvestilo ni prišlo na telefon, besedilo ni bilo videti na zaklenjenem zaslonu.
+- **Ni narejeno (po potrebi):** tap na obvestilo ne odpre ničesar posebnega;
+  povzetek se ne hrani v bazi (ni zgodovine, ni zaslona v aplikaciji). Prikaz
+  povzetka v aplikaciji bi pomenil zbirko `summaries/{id}` + pravila.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.

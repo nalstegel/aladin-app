@@ -30,16 +30,22 @@ class AppSettingsScreen extends ConsumerWidget {
                 'Potisna obvestila',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
-              subtitle: const Text(
-                'Pripravljena naročila, zamude in jutranji povzetek dneva.',
-                style: TextStyle(fontSize: 12),
+              subtitle: Text(
+                (user?.isAdmin ?? false)
+                    ? 'Pripravljena naročila, zamude in jutranji povzetek '
+                        'dneva. Kot administrator dobiš tudi dnevni, tedenski '
+                        'in mesečni povzetek prometa.'
+                    : 'Pripravljena naročila, zamude in jutranji povzetek '
+                        'dneva.',
+                style: const TextStyle(fontSize: 12),
               ),
               value: pushEnabled.valueOrNull ?? false,
               onChanged: pushEnabled.isLoading
                   ? null
                   : (v) async {
-                      final actual =
-                          await ref.read(pushServiceProvider).setEnabled(v);
+                      final actual = await ref
+                          .read(pushServiceProvider)
+                          .setEnabled(v, isAdmin: user?.isAdmin ?? false);
                       ref.invalidate(pushEnabledProvider);
                       if (!context.mounted) return;
                       if (v && !actual) {

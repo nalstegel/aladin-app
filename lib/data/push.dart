@@ -11,6 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// posameznim zaposlenim.
 const pushTopic = 'zaposleni';
 
+/// Dnevni, tedenski in mesečni povzetek vsebujejo promet in cene, ki jih
+/// zaposleni v aplikaciji ne vidijo (Statistika je samo za administratorje),
+/// zato gredo na ločeno temo, na katero so naročeni samo administratorji.
+const adminPushTopic = 'admini';
+
 class PushService {
   PushService(this._messaging);
 
@@ -27,11 +32,11 @@ class PushService {
 
   /// Vklop zahteva dovoljenje uporabnika. Če ga ne da, ostane izklopljeno —
   /// vrnjena vrednost pove dejansko stanje, ne želenega.
-  Future<bool> setEnabled(bool enabled) async {
+  Future<bool> setEnabled(bool enabled, {required bool isAdmin}) async {
     final prefs = await SharedPreferences.getInstance();
 
     if (!enabled) {
-      await _safe(() => _messaging.unsubscribeFromTopic(pushTopic));
+      await _unsubscribe();
       await prefs.setBool(_prefsKey, false);
       return false;
     }
@@ -46,20 +51,33 @@ class PushService {
       return false;
     }
 
-    await _safe(() => _messaging.subscribeToTopic(pushTopic));
+    await _subscribe(isAdmin: isAdmin);
     await prefs.setBool(_prefsKey, true);
     return true;
   }
 
-  /// Ob zagonu obnovimo naročnino, če je bila vklopljena.
-  Future<void> restore() async {
+  /// Ob zagonu obnovimo naročnino, če je bila vklopljena. Vlogo preverimo
+  /// vsakič znova: administrator, ki je bil medtem degradiran, mora nehati
+  /// dobivati promet, povišan zaposleni pa ga začeti.
+  Future<void> restore({required bool isAdmin}) async {
     if (!await isEnabled()) return;
-    await _safe(() => _messaging.subscribeToTopic(pushTopic));
+    await _subscribe(isAdmin: isAdmin);
   }
 
-  /// Ob odjavi telefon ne sme več dobivati obvestil o naročilih.
-  Future<void> signOut() async {
+  /// Ob odjavi telefon ne sme več dobivati obvestil o naročilih — in ne
+  /// povzetkov prometa.
+  Future<void> signOut() => _unsubscribe();
+
+  Future<void> _subscribe({required bool isAdmin}) async {
+    await _safe(() => _messaging.subscribeToTopic(pushTopic));
+    await _safe(() => isAdmin
+        ? _messaging.subscribeToTopic(adminPushTopic)
+        : _messaging.unsubscribeFromTopic(adminPushTopic));
+  }
+
+  Future<void> _unsubscribe() async {
     await _safe(() => _messaging.unsubscribeFromTopic(pushTopic));
+    await _safe(() => _messaging.unsubscribeFromTopic(adminPushTopic));
   }
 
   /// Obvestila ne smejo podreti aplikacije. Brez omrežja ali brez nastavljene
