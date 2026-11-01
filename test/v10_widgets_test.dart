@@ -4,6 +4,7 @@ import 'package:aladin/data/store.dart';
 import 'package:aladin/models/enums.dart';
 import 'package:aladin/models/order.dart';
 import 'package:aladin/ui/orders/order_detail_screen.dart';
+import 'package:aladin/ui/orders/orders_screen.dart';
 import 'package:aladin/ui/orders/ready_lists.dart';
 import 'package:aladin/ui/widgets/undo_snackbar.dart';
 import 'package:flutter/material.dart';
@@ -167,6 +168,45 @@ void main() {
       expect(find.text('Klicano · čaka stranko'), findsOneWidget);
     });
 
+    testWidgets('znotraj sekcije so naročila po ID-ju, ne po pripravi', (
+      tester,
+    ) async {
+      final repo = container.read(repositoryProvider.notifier);
+      final customer = repo.state.customers.first;
+      final orders = [
+        for (var i = 0; i < 2; i++)
+          repo.createOrder(
+            customer: customer,
+            location: OrderLocation.ljubljana,
+            channel: OrderChannel.dropoff,
+            handover: HandoverMode.customerCollects,
+            itemCount: 1,
+          ),
+      ];
+      final type = repo.state.rugTypes.first;
+      // Višji ID je pripravljen prvi.
+      for (final o in orders.reversed) {
+        repo.markOrderPickedUp(o.id);
+        final item = repo.state.itemsOf(o.id).single;
+        repo.advance(item.id);
+        repo.finishRugFromDrying(
+          item.id,
+          widthCm: 100,
+          lengthCm: 200,
+          rugType: type,
+          extras: const [],
+          discountPercent: 0,
+        );
+      }
+      await pump(tester, const ReadyList());
+      await tester.tap(find.text('Ni klicano'));
+      await tester.pump();
+
+      final low = tester.getTopLeft(find.text(orders.first.id).first).dy;
+      final high = tester.getTopLeft(find.text(orders.last.id).first).dy;
+      expect(low, lessThan(high));
+    });
+
     testWidgets('V kombi pokaže Razveljavi, ki ne obvisi', (tester) async {
       final order = ready(channel: OrderChannel.delivery);
       await pump(tester, const ReadyList());
@@ -185,6 +225,41 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('${order.id} je v kombiju.'), findsNothing);
+    });
+  });
+
+  group('Naročila', () {
+    testWidgets('zavihek Naročila in iskanje: po ID-ju, ne po terminu', (
+      tester,
+    ) async {
+      final repo = container.read(repositoryProvider.notifier);
+      final customer = repo.state.customers.first;
+      final now = DateTime.now();
+      // Nižji ID ima poznejši termin prevzema.
+      final low = repo.createOrder(
+        customer: customer,
+        location: OrderLocation.ljubljana,
+        channel: OrderChannel.delivery,
+        handover: HandoverMode.weDeliver,
+        itemCount: 1,
+        pickupAt: now.add(const Duration(days: 3)),
+      );
+      final high = repo.createOrder(
+        customer: customer,
+        location: OrderLocation.ljubljana,
+        channel: OrderChannel.delivery,
+        handover: HandoverMode.weDeliver,
+        itemCount: 1,
+        pickupAt: now.add(const Duration(days: 1)),
+      );
+      await pump(tester, const OrdersScreen());
+
+      double dy(String id) => tester.getTopLeft(find.text(id).first).dy;
+      expect(dy(low.id), lessThan(dy(high.id)));
+
+      await tester.enterText(find.byType(TextField), 'LJ-');
+      await tester.pump();
+      expect(dy(low.id), lessThan(dy(high.id)));
     });
   });
 

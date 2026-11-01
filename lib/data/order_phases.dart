@@ -1,3 +1,4 @@
+import '../core/order_id.dart';
 import '../models/enums.dart';
 import '../models/order.dart';
 import '../models/rug_item.dart';
@@ -54,23 +55,22 @@ extension OrderPhaseX on OrderPhase {
   }
 }
 
-/// Vrstni red naročil v kombiju (V10 §3): ročno razvrščena po `vanOrder`.
-/// Naročila brez številke (iz časa pred ročnim razvrščanjem) so pred njimi, po
-/// času dogovorjenega vračila — nova naročila so tako vedno na koncu.
+/// Vrstni red naročil v kombiju (V10 §3): privzeto po ID-ju, kot povsod. Ko
+/// uporabnik z vlečenjem spremeni vrstni red, se ta shrani v `vanOrder` in
+/// ostane — ročno razvrščena naročila so pred njimi, naročila, ki so v kombi
+/// prišla pozneje (brez številke), pa za njimi, spet po ID-ju.
 List<WorkOrder> sortedForVan(Iterable<WorkOrder> orders) {
-  DateTime key(WorkOrder o) => o.deliveryAt ?? o.inVanAt ?? o.createdAt;
   return orders.toList()
     ..sort((a, b) {
       final ar = a.vanOrder;
       final br = b.vanOrder;
       if (ar != null && br != null) {
         final c = ar.compareTo(br);
-        return c != 0 ? c : a.id.compareTo(b.id);
+        return c != 0 ? c : compareOrderIds(a.id, b.id);
       }
-      if (ar != null) return 1;
-      if (br != null) return -1;
-      final c = key(a).compareTo(key(b));
-      return c != 0 ? c : a.id.compareTo(b.id);
+      if (ar != null) return -1;
+      if (br != null) return 1;
+      return compareOrderIds(a.id, b.id);
     });
 }
 
@@ -100,12 +100,12 @@ class PhaseGroup {
   /// pregleda, dokler čakajo na ostale kose.
   final List<RugItem> readySiblings;
 
-  /// Kdaj je naročilo prišlo v proces — po tem se skupine razvrščajo.
+  /// Kdaj je naročilo prišlo v proces — prikazano na kartici.
   final DateTime arrivedAt;
 }
 
-/// Skupine kosov za zavihek Čaka pranje ali Sušenje, razvrščene po
-/// dejanskem vrstnem redu prihoda: najstarejši prevzeti / pripeljani zgoraj.
+/// Skupine kosov za zavihek Čaka pranje ali Sušenje, razvrščene po ID-ju
+/// naročila (najmanjši zgoraj).
 List<PhaseGroup> groupsFor(
   AppState state,
   OrderPhase phase, {
@@ -133,10 +133,7 @@ List<PhaseGroup> groupsFor(
       arrivedAt: _arrivedAt(order, all),
     ));
   }
-  groups.sort((a, b) {
-    final c = a.arrivedAt.compareTo(b.arrivedAt);
-    return c != 0 ? c : a.order.id.compareTo(b.order.id);
-  });
+  groups.sort((a, b) => compareOrderIds(a.order.id, b.order.id));
   return groups;
 }
 

@@ -52,3 +52,6 @@ node_modules/
 
 # Local-only release scripts
 tool/release_ios.sh
+
+# iOS build output
+/ios/build/

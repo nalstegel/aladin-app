@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/order_id.dart';
 import '../models/app_user.dart';
 import '../models/enums.dart';
 import '../models/order.dart';
@@ -24,14 +25,14 @@ final currentUserProvider = Provider<AppUser?>(
   (ref) => ref.watch(repositoryProvider).currentUser,
 );
 
-/// Odprta naročila enega kanala, urejena po nujnosti.
+/// Odprta naročila enega kanala, po ID-ju.
 final ordersByChannelProvider =
     Provider.family<List<WorkOrder>, OrderChannel>((ref, channel) {
   final state = ref.watch(repositoryProvider);
   final list = state.orders
       .where((o) => o.channel == channel && o.status.isOpen)
       .toList();
-  list.sort(_byUrgency);
+  list.sort((a, b) => compareOrderIds(a.id, b.id));
   return list;
 });
 
@@ -46,15 +47,6 @@ final completedOrdersProvider =
   return list;
 });
 
-int _byUrgency(WorkOrder a, WorkOrder b) {
-  final ad = a.dueAt ?? a.deliveryAt ?? a.pickupAt;
-  final bd = b.dueAt ?? b.deliveryAt ?? b.pickupAt;
-  if (ad == null && bd == null) return b.createdAt.compareTo(a.createdAt);
-  if (ad == null) return 1;
-  if (bd == null) return -1;
-  return ad.compareTo(bd);
-}
-
 /// Kaj je danes za pobrati (dostava) — nadomešča list na mizi.
 final todayPickupsProvider = Provider<List<WorkOrder>>((ref) {
   final state = ref.watch(repositoryProvider);
@@ -64,7 +56,7 @@ final todayPickupsProvider = Provider<List<WorkOrder>>((ref) {
           o.pickupAt != null &&
           !_isAfterToday(o.pickupAt!))
       .toList();
-  list.sort((a, b) => a.pickupAt!.compareTo(b.pickupAt!));
+  list.sort((a, b) => compareOrderIds(a.id, b.id));
   return list;
 });
 
@@ -78,8 +70,7 @@ final todayDeliveriesProvider = Provider<List<WorkOrder>>((ref) {
           (o.inVanAt != null ||
               (o.deliveryAt != null && !_isAfterToday(o.deliveryAt!))))
       .toList();
-  list.sort((a, b) => (a.deliveryAt ?? a.inVanAt ?? a.createdAt)
-      .compareTo(b.deliveryAt ?? b.inVanAt ?? b.createdAt));
+  list.sort((a, b) => compareOrderIds(a.id, b.id));
   return list;
 });
 
@@ -121,13 +112,12 @@ final actionNeededProvider = Provider<ActionNeeded>((ref) {
   final state = ref.watch(repositoryProvider);
   final now = DateTime.now();
   final late = state.orders.where((o) => o.isPickupOverdue(now)).toList()
-    ..sort((a, b) => a.pickupAt!.compareTo(b.pickupAt!));
+    ..sort((a, b) => compareOrderIds(a.id, b.id));
   final notCalled = state.orders
       .where((o) =>
           o.status == OrderStatus.awaitingCollection && o.calledAt == null)
       .toList()
-    ..sort((a, b) =>
-        (a.readyAt ?? a.createdAt).compareTo(b.readyAt ?? b.createdAt));
+    ..sort((a, b) => compareOrderIds(a.id, b.id));
   final stuck = state.items.where((i) {
     if (i.status != RugStatus.finishing) return false;
     final order = state.order(i.orderId);

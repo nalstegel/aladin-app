@@ -71,8 +71,9 @@ class WorkOrder {
 
   /// Ročni vrstni red v zavihku Dostave (V10 §3): manjša številka = prej.
   /// Shrani se v bazi, zato ga vidijo vsi telefoni in preživi ponovni zagon.
-  /// Smiselna je samo, dokler je naročilo V kombiju; `Repository.sendToVan` jo
-  /// ob nalaganju vedno znova postavi na konec.
+  /// Smiselna je samo, dokler je naročilo V kombiju. Null = nihče še ni ročno
+  /// urejal (ali je naročilo prišlo v kombi pozneje) → vrstni red po ID-ju;
+  /// `Repository.reorderVan` jo nastavi vsem naročilom v kombiju.
   final int? vanOrder;
 
   const WorkOrder({

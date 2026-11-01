@@ -995,6 +995,45 @@ narejena iz `development` brez V10. 2026-10-28 je bil `development` združen v
   v Firestoreu še vedno berljivi za vse prijavljene, torej to ni varnostna meja.
   Test: `test/more_screen_test.dart`.
 
+### 4.14 — Sortiranje naročil po ID-ju — DONE v kodi (2026-11-01)
+Ticket „Sortiranje naročil“: povsod so naročila privzeto od najmanjšega ID-ja
+(manjši ID = starejše naročilo = višje). Prej je imel vsak seznam svoj ključ
+(termin prevzema, `readyAt`, čas prihoda, `createdAt` padajoče).
+
+- **Ena primerjalna funkcija:** `compareOrderIds(a, b)` v `lib/core/order_id.dart`
+  deluje na ID-ju naročila (`LJ-005`) in kosa (`LJ-100-2`). Ne primerja besedila
+  (`LJ-100-10` bi bil pred `LJ-100-2`, `LJ10-001` pred `LJ2-001`), ampak razčleni
+  ID: območje → krog (`LJ1-…`) → številka → kos. Nov seznam naročil ali kosov
+  uporabi njo, ne `id.compareTo`.
+- ⚑ **Mešani seznam („Vse“):** najprej po območju v vrstnem redu filtrov
+  (LJ, MB, CE, DOL = vrstni red `OrderLocation.values`), znotraj območja po
+  številki. Števci območij so neodvisni, zato bi razvrstitev samo po številki
+  premešala `MB-538` in `LJ-540`. Ko je filter regije izbran, je to ista razvrstitev.
+- **Kje velja:** Naročila (prej po terminu prevzema), Čaka pranje / Sušenje
+  (`groupsFor`, prej po prihodu), Pripravljeno z vsemi tremi sekcijami (prej po
+  `readyAt`), Dostave, rezultati iskanja (prej `createdAt` padajoče), delovni
+  seznami pod skenerjem (`work_list_screen`), zvonec („še niso klicana“), vsi
+  bloki na Danes (`todayPickupsProvider`, `todayDeliveriesProvider`,
+  `actionNeededProvider`). ⚑ Blok „Prevzemi danes“ je bil po uri prevzema; ura je
+  še vedno izpisana v vrstici, vrstni red pa je po ID-ju, ker ticket pravi
+  „povsod“. Če ga lastnik želi po uri, je to ena vrstica v `todayPickupsProvider`.
+- **Namenoma ne:** zgodovina stranke (`AppState.ordersOf`) ostane od
+  najnovejšega, ker je kronološki pregled; šifrant, stranke in uporabniki so po
+  imenu.
+- **Dostave:** privzeto po ID-ju. `Repository.sendToVan` ne dodeli več
+  `vanOrder` (prej: na konec po času nalaganja). `reorderVan` ga dodeli vsem
+  naročilom v kombiju, torej ročni vrstni red obstaja šele po prvem vlečenju.
+  `sortedForVan`: najprej ročno urejena (`vanOrder`), za njimi ostala po ID-ju —
+  naročilo, ki gre v kombi po ročnem urejanju, torej pristane na koncu. Kar je
+  bilo v kombiju ob nadgradnji, ima še staro `vanOrder` (po času nalaganja) in ga
+  vidi kot ročni vrstni red; to se samo izprazni, ko naročila zapustijo kombi.
+- **Past v zvoncu:** obvestilo „še niso klicana“ je vzelo čas iz `uncalled.last`,
+  kar je bilo zadnje po `readyAt`. Po razvrstitvi po ID-ju to ni več res, zato je
+  zdaj največji `readyAt` izračunan izrecno.
+- **Testi:** `order_id_test.dart` (primerjava), `order_phases_test.dart`,
+  `v10_test.dart` (Dostave, zvonec), `v10_widgets_test.dart` (Pripravljeno,
+  Naročila + iskanje). **Ni preverjeno na napravi.**
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.
