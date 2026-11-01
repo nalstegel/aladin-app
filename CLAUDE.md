@@ -71,6 +71,9 @@ lib/
     store.dart         DataStore abstract interface — the backend abstraction
     auth.dart          AuthService (Firebase email/password sign-in)
     alerts.dart        bell alerts derived from order state; seen-state per device
+    stats.dart         pure `computeStats()` behind Več → Statistika (plan.md §4.18):
+                       production counts by date a piece FIRST became ready,
+                       revenue by return date — keep those two timelines apart
     push.dart          FCM, topic-based: `zaposleni` (all) + `admini` (revenue summaries)
     navigation.dart    shell/orders tab providers, for cross-tab deep links
     seed.dart          demo data

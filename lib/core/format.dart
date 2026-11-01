@@ -112,6 +112,15 @@ class Fmt {
     return raw.trim();
   }
 
+  /// Povprečen čas v statistiki: "40 min", "18 h", "3,5 d". Dolžina namesto
+  /// sklanjanja ("3,5 dneva"), da ni slovničnih izjem.
+  static String duration(Duration d) {
+    if (d.inHours < 1) return '${d.inMinutes} min';
+    if (d.inHours < 24) return '${d.inHours} h';
+    final days = d.inMinutes / Duration.minutesPerDay;
+    return '${days.toStringAsFixed(1).replaceAll('.', ',')} d';
+  }
+
   static String relative(DateTime d) {
     final diff = DateTime.now().difference(d);
     if (diff.inMinutes < 1) return 'pravkar';

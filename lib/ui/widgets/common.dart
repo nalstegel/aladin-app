@@ -311,6 +311,7 @@ class StatTile extends StatelessWidget {
     required this.color,
     this.icon,
     this.onTap,
+    this.caption,
   });
 
   final String value;
@@ -318,6 +319,9 @@ class StatTile extends StatelessWidget {
   final Color color;
   final IconData? icon;
   final VoidCallback? onTap;
+
+  /// Neobvezna siva vrstica pod oznako, npr. koliko naročil stoji za zneskom.
+  final String? caption;
 
   @override
   Widget build(BuildContext context) {
@@ -340,13 +344,20 @@ class StatTile extends StatelessWidget {
                   Icon(icon, size: 16, color: color),
                   const SizedBox(width: 6),
                 ],
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: color,
-                    height: 1,
+                // Znesek v evrih je lahko širok: raje manjši kot odrezan.
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                        height: 1,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -360,6 +371,17 @@ class StatTile extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
+            if (caption != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  caption!,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
