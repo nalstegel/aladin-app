@@ -1220,6 +1220,80 @@ Cloud Functions. **Ne deluje, dokler lastnik ne opravi korakov v
   povzetek se ne hrani v bazi (ni zgodovine, ni zaslona v aplikaciji). Prikaz
   povzetka v aplikaciji bi pomenil zbirko `summaries/{id}` + pravila.
 
+### 4.18 — Statistika kot pregledna plošča (Več → Statistika in promet) — DONE v kodi (2026-11-01)
+Ticket „Razširi Statistika in promet v en dashboard". Ena stran, brez podstrani, pet
+blokov: Pregled, Pripravljeno na policah, Proizvodnja (s filtrom obdobja), Trenutno
+delo, Dodatna statistika. Še vedno samo za administratorje (vrstica v Več).
+⚑ = odločitev, ki je ni podal lastnik.
+
+- **Kje:** `lib/data/stats.dart` (čista funkcija `computeStats(state, now:, period:)`,
+  brez Fluttra — vse testirano brez zaslona) + `lib/ui/more/stats_screen.dart` (samo
+  prikaz in filter). Nič se ne shranjuje; vse se izpelje iz naročil in zgodovine kosov.
+- **Dve časovnici, ne mešaj** (pravilo 6 iz ticketa): *proizvodnja* je po datumu, ko
+  kos preide v Pripravljeno; *realiziran promet* po datumu vračila (`completedAt`).
+  Naročilo, dokončano 30. 10. in vrnjeno 2. 11., je oktobrska proizvodnja in novembrski
+  promet — test v `stats_test.dart`.
+- **Kos je dokončan ob PRVEM dogodku `ready` v `history`** (isto kot `functions/
+  summaries.js`), ne ob zadnjem: kos, ki gre v ponovno pranje in nazaj, se ne šteje
+  dvakrat. **Naročilo je dokončano**, ko je to storil zadnji kos (datum = največji
+  prvi `ready`). Kosi so po obdobju, naročila po zadnjem kosu — zato je lahko v mesecu
+  več kosov kot naročil.
+- **Obdobje:** Danes / Ta teden (pon–ned) / Ta mesec / Po meri datuma. Po meri = dve
+  vrstici Od / Do na isti strani (`showDatePicker`, ne nova stran); privzeto od 1. v
+  mesecu do danes, Od > Do se zamenja. Obdobje velja za Proizvodnjo IN Dodatno
+  statistiko (njen podnaslov izpiše obdobje). Pregled, Police in Trenutno delo so
+  vedno „zdaj".
+- ⚑ **Pripravljeno = kosi, ne naročila.** Police štejejo vse kose v statusu `ready` v
+  odprtih, nearhiviranih naročilih — tudi iz delno pripravljenega naročila in tudi
+  tiste v Dostavah (še niso vrnjeni). „Naročil" = naročila z vsaj enim takim kosom, zato
+  se lahko razlikuje od števca zavihka Pripravljeno (ta šteje cela naročila, ki niso v
+  Dostavah). Vrednost = vsota cen kosov (brez dostave, Vnos/Iznos in minimuma 50 €, kot
+  „Potrjena vrednost" v §4.17); realiziran promet je `billingFor`, torej z njimi.
+- ⚑ **Starost zaloge** = koledarski dnevi od ZADNJEGA prehoda kosa v Pripravljeno
+  (ponovno pranje starost ponastavi): 0–3 / 4–7 / 8+ (3 dni = še 0–3). Brez rdeče barve
+  (V8) — samo 8+ je jantarna, ko ni prazna.
+- ⚑ **V teku € = vrednost odprtih naročil minus Pripravljeno €**, tako da V teku +
+  Pripravljeno = „Skupna vrednost odprtih naročil" (isti `billingFor` kot prej). Stara
+  vrstica „V teku (še ni obračunano)" je bila celotna odprta vrednost. Ker m² in cena
+  nastaneta šele pri Hitrem obračunu, je V teku pogosto blizu 0 (dostava, Vnos/Iznos,
+  ceniki že vnesenih mer).
+- **Trenutno delo:** Čaka pranje in Sušenje po kosih, z istima predikatoma kot zavihka
+  (`OrderPhase.washing/drying.containsItem`; „Mere in cena" je pod Sušenje). m² tam
+  namenoma ni (ticket) — na strani piše zakaj.
+- ⚑ **Dodatna statistika je na proizvodni osnovi** (kosi, ki so v obdobju prešli v
+  Pripravljeno): razrez po vrsti (kosi, m², €), regiji in kanalu (naročila, €). Vsota
+  vsakega razreza je enaka Proizvodnji (preverja test), zato se števila ujemajo. Če bi
+  lastnik rad razrez prometa po datumu vračila (z dostavo, Vnos/Iznos), je to druga
+  osnova in nova funkcija.
+  - **Vrste preprog** so iz šifranta (vse, tudi z 0, v vrstnem redu cenika) + imena
+    na kosih, ki jih šifrant ne pozna več (preimenovana vrsta). Ne trdo kodirane
+    Sintetika/Shaggy/Volna/Perzijska — lastnik jih lahko preimenuje.
+  - **Regije** LJ / MB / CE / DOL — „DL" iz ticketa je v aplikaciji „DOL" (kot §4.17).
+  - **Kanal:** `delivery` se tu imenuje „Naš prevzem" (kot v Hitrem vnosu), `dropoff`
+    „Pripeljano"; B2B vrstica se pokaže samo, če ima podatke.
+- ⚑ **Povprečni časi so po kosih.** Prevzeto → Pripravljeno: od prvega dogodka
+  `awaitingWash` (potrditev prevzema; kos brez njega se izpusti) do prvega `ready`, za
+  kose, dokončane v obdobju. Pripravljeno → Vrnjeno: od zadnjega `ready` pred vračilom
+  do `returned`, za kose, vrnjene v obdobju (to je čas čakanja na polici, ne čas, ko je
+  celo naročilo čakalo na sosede). Prikaz „18 h" / „3,5 d" (`Fmt.duration`).
+- **Izključeno povsod:** arhivirana (§4.15) in preklicana naročila.
+- **Odstranjeno s strani** (ticket jih ne našteva): števci Aktivnih / Zaključenih /
+  Strank, „Oprano skupaj m²" in seznam kosov po vseh statusih (V prevzemu, Mere in
+  cena). Števci naročil so zdaj podnapisi na ploščicah. Če jih lastnik pogreša, je to
+  ena vrstica v `computeStats`.
+- **Skupni deli:** `StatTile` ima neobvezen `caption`, znesek pa je v `FittedBox`, da
+  velik znesek na ozkem telefonu ne odrezuje; `Fmt.duration`.
+- **Zaslon opazuje `todayProvider`** → test widgeta mora nadomestiti
+  `minuteClockProvider` s `Stream.value(...)` (kot §4.16). `archive_test.dart` je zato
+  dobil ta override, njegov test statistike pa zdaj bere ploščico „Pripravljeno:
+  naročil / kosov" namesto odstranjene „aktivnih".
+- **Testi:** `test/stats_test.dart` (29: obdobja, promet, primer 30. 10. → 2. 11.,
+  prvi `ready`, naročilo po zadnjem kosu, meja polnoči, police in starost, V teku +
+  Pripravljeno, pipeline, povprečja, razrezi seštejejo v Proizvodnjo, zaslon, filter,
+  Po meri s pravim izbirnikom datuma, 360 px širok zaslon z velikimi zneski brez
+  prelivanja). **Ni preverjeno na napravi:** vizualno nič — razmik ploščic, videz
+  celic starosti, vrstice razrezov z deležem.
+
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter
    was installed on the original machine.

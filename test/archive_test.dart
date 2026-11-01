@@ -32,7 +32,11 @@ void main() {
     store = InMemoryStore();
     await store.save(buildSeedState().copyWith(orders: [], items: []));
     container = ProviderContainer(
-      overrides: [storeProvider.overrideWithValue(store)],
+      overrides: [
+        storeProvider.overrideWithValue(store),
+        // Statistika watches the day; a periodic clock would leave a timer.
+        minuteClockProvider.overrideWith((ref) => Stream.value(DateTime.now())),
+      ],
     );
     repo = container.read(repositoryProvider.notifier);
     await repo.init();
@@ -507,19 +511,22 @@ void main() {
       priced(archived, 1);
       repo.setCurrentUser('u-nal');
 
-      String? active() => tester
+      // Both orders have one priced piece (90 €) on the shelf.
+      String? shelf() => tester
           .widgetList<StatTile>(find.byType(StatTile))
-          .where((t) => t.label == 'aktivnih')
+          .where((t) => t.label == 'Pripravljeno: naročil / kosov')
           .firstOrNull
           ?.value;
 
       await show(tester, const StatsScreen());
-      expect(active(), '2');
+      expect(shelf(), '2 / 2');
+      expect(find.text('180,00 €'), findsWidgets);
 
       repo.archiveOrder(archived.id);
       await tester.pumpAndSettle();
 
-      expect(active(), '1');
+      expect(shelf(), '1 / 1');
+      expect(find.text('180,00 €'), findsNothing);
     });
   });
 }
