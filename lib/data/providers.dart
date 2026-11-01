@@ -30,7 +30,7 @@ final ordersByChannelProvider =
     Provider.family<List<WorkOrder>, OrderChannel>((ref, channel) {
   final state = ref.watch(repositoryProvider);
   final list = state.orders
-      .where((o) => o.channel == channel && o.status.isOpen)
+      .where((o) => o.channel == channel && o.isActive)
       .toList();
   list.sort((a, b) => compareOrderIds(a.id, b.id));
   return list;
@@ -40,7 +40,8 @@ final completedOrdersProvider =
     Provider.family<List<WorkOrder>, OrderChannel>((ref, channel) {
   final state = ref.watch(repositoryProvider);
   final list = state.orders
-      .where((o) => o.channel == channel && !o.status.isOpen)
+      .where((o) =>
+          o.channel == channel && !o.status.isOpen && !o.isArchived)
       .toList();
   list.sort((a, b) =>
       (b.completedAt ?? b.createdAt).compareTo(a.completedAt ?? a.createdAt));
@@ -52,6 +53,7 @@ final todayPickupsProvider = Provider<List<WorkOrder>>((ref) {
   final state = ref.watch(repositoryProvider);
   final list = state.orders
       .where((o) =>
+          o.isActive &&
           o.status == OrderStatus.scheduledPickup &&
           o.pickupAt != null &&
           !_isAfterToday(o.pickupAt!))
@@ -66,6 +68,7 @@ final todayDeliveriesProvider = Provider<List<WorkOrder>>((ref) {
   final state = ref.watch(repositoryProvider);
   final list = state.orders
       .where((o) =>
+          o.isActive &&
           o.status == OrderStatus.awaitingDelivery &&
           (o.inVanAt != null ||
               (o.deliveryAt != null && !_isAfterToday(o.deliveryAt!))))
@@ -80,7 +83,7 @@ final productionCountsProvider = Provider<Map<RugStatus, int>>((ref) {
   final counts = <RugStatus, int>{for (final s in RugStatus.values) s: 0};
   for (final i in state.items) {
     final order = state.order(i.orderId);
-    if (order == null || !order.status.isOpen) continue;
+    if (order == null || !order.isActive) continue;
     counts[i.status] = (counts[i.status] ?? 0) + 1;
   }
   return counts;
@@ -115,13 +118,15 @@ final actionNeededProvider = Provider<ActionNeeded>((ref) {
     ..sort((a, b) => compareOrderIds(a.id, b.id));
   final notCalled = state.orders
       .where((o) =>
-          o.status == OrderStatus.awaitingCollection && o.calledAt == null)
+          o.isActive &&
+          o.status == OrderStatus.awaitingCollection &&
+          o.calledAt == null)
       .toList()
     ..sort((a, b) => compareOrderIds(a.id, b.id));
   final stuck = state.items.where((i) {
     if (i.status != RugStatus.finishing) return false;
     final order = state.order(i.orderId);
-    return order != null && order.status.isOpen;
+    return order != null && order.isActive;
   }).toList();
   return ActionNeeded(pickupLate: late, notCalled: notCalled, stuckItems: stuck);
 });

@@ -1,3 +1,4 @@
+import '../core/order_id.dart';
 import '../models/app_user.dart';
 import '../models/catalog.dart';
 import '../models/customer.dart';
@@ -95,9 +96,20 @@ class AppState {
     return list;
   }
 
+  /// A customer's orders, newest first. Archived orders are left out — they
+  /// are out of the workflow and live in Več → Arhiv.
   List<WorkOrder> ordersOf(String customerId) {
-    final list = orders.where((o) => o.customerId == customerId).toList();
+    final list = orders
+        .where((o) => o.customerId == customerId && !o.isArchived)
+        .toList();
     list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return list;
+  }
+
+  /// Orders in the archive (Več → Arhiv), by ID like every other list.
+  List<WorkOrder> get archivedOrders {
+    final list = orders.where((o) => o.isArchived).toList();
+    list.sort((a, b) => compareOrderIds(a.id, b.id));
     return list;
   }
 

@@ -118,6 +118,17 @@ class _ScannerScreenState extends ConsumerState<ScannerScreen> {
       return;
     }
 
+    // An archived order is out of the workflow: a scan must not open the
+    // pickup sheet or move the item. It has to be restored from the archive
+    // first.
+    if (state.order(item.orderId)?.isArchived ?? false) {
+      _showFlash(
+        '${item.orderId} je v arhivu (Več → Arhiv)',
+        AppColors.danger,
+      );
+      return;
+    }
+
     // Prevzem je vedno hiter korak z doplačili — skeniranje ga ne preskoči.
     if (item.status == RugStatus.awaitingPickup) {
       PickupSheet.show(context, item.orderId);

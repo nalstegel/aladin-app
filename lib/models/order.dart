@@ -76,6 +76,13 @@ class WorkOrder {
   /// `Repository.reorderVan` jo nastavi vsem naročilom v kombiju.
   final int? vanOrder;
 
+  /// When the order was moved to the archive (Več → Arhiv). Meant for old
+  /// orders that were handed back in practice but never completed in the app.
+  /// This is a flag, not a status: the status stays derived from the items and
+  /// is left untouched. An archived order is in no tab, counter, alert or
+  /// statistic, but all its data is kept and it can be restored.
+  final DateTime? archivedAt;
+
   const WorkOrder({
     required this.id,
     required this.location,
@@ -102,24 +109,34 @@ class WorkOrder {
     this.inVanAt,
     this.calledAt,
     this.vanOrder,
+    this.archivedAt,
   });
 
   String get number => id;
 
+  bool get isArchived => archivedAt != null;
+
+  /// The order is in the live workflow: not completed, cancelled or archived.
+  /// Every list, counter or alert that shows work in progress must use this,
+  /// not `status.isOpen`, which knows nothing about the archive.
+  bool get isActive => status.isOpen && !isArchived;
+
   /// Naročilo je prepozno, če je rok mimo in še ni predano.
   bool isOverdue(DateTime now) =>
-      dueAt != null && status.isOpen && dueAt!.isBefore(now);
+      dueAt != null && isActive && dueAt!.isBefore(now);
 
   /// Naš planiran prevzem je zamujen: preproga je še pri stranki, dogovorjeni
   /// termin (konec časovnega okna, sicer začetek) pa je že mimo. Pred tem je
   /// čakanje na prevzem normalno stanje, ne opozorilo (QA v4 §8).
   bool isPickupOverdue(DateTime now) {
+    if (isArchived) return false;
     if (status != OrderStatus.scheduledPickup || pickupAt == null) return false;
     return now.isAfter(pickupWindowEnd ?? pickupAt!);
   }
 
   /// Naročilo je naloženo v kombi in čaka na vračilo na naslov.
-  bool get isInVan => status == OrderStatus.awaitingDelivery && inVanAt != null;
+  bool get isInVan =>
+      status == OrderStatus.awaitingDelivery && inVanAt != null && !isArchived;
 
   /// Nevsiljiv interni opomnik, kdaj naj bi bilo naročilo vrnjeno (privzeto
   /// 10 dni po pripravljenosti). Ni alarm — samo siva opomba na seznamu.
@@ -148,8 +165,10 @@ class WorkOrder {
     DateTime? inVanAt,
     DateTime? calledAt,
     int? vanOrder,
+    DateTime? archivedAt,
     bool clearInVanAt = false,
     bool clearCalledAt = false,
+    bool clearArchivedAt = false,
     bool clearReadyAt = false,
     bool clearPickupAt = false,
     bool clearPickupWindowEnd = false,
@@ -184,6 +203,7 @@ class WorkOrder {
       inVanAt: clearInVanAt ? null : (inVanAt ?? this.inVanAt),
       calledAt: clearCalledAt ? null : (calledAt ?? this.calledAt),
       vanOrder: clearInVanAt ? null : (vanOrder ?? this.vanOrder),
+      archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     );
   }
 
@@ -213,6 +233,7 @@ class WorkOrder {
         'inVanAt': inVanAt?.toIso8601String(),
         'calledAt': calledAt?.toIso8601String(),
         'vanOrder': vanOrder,
+        'archivedAt': archivedAt?.toIso8601String(),
       };
 
   factory WorkOrder.fromJson(Map<String, dynamic> j) {
@@ -251,6 +272,7 @@ class WorkOrder {
       inVanAt: d('inVanAt'),
       calledAt: d('calledAt'),
       vanOrder: j['vanOrder'] as int?,
+      archivedAt: d('archivedAt'),
     );
   }
 }

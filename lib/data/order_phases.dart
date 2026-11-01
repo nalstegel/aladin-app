@@ -44,7 +44,7 @@ extension OrderPhaseX on OrderPhase {
   /// izključujoča (celo naročilo še ni v procesu / je v celoti pripravljeno),
   /// Čaka pranje in Sušenje pa pokažeta naročilo, če je vsaj en kos tam.
   bool containsOrder(WorkOrder order, List<RugItem> items) {
-    if (!order.status.isOpen) return false;
+    if (!order.isActive) return false;
     return switch (this) {
       OrderPhase.intake => order.status == OrderStatus.scheduledPickup,
       // Pripravljeno: v celoti pripravljeno in še ne v kombiju.
@@ -114,7 +114,7 @@ List<PhaseGroup> groupsFor(
   assert(phase.showsItems);
   final groups = <PhaseGroup>[];
   for (final order in state.orders) {
-    if (!order.status.isOpen) continue;
+    if (!order.isActive) continue;
     if (channel != null && order.channel != channel) continue;
     final all = state.itemsOf(order.id);
     final inPhase = all.where(phase.containsItem).toList()
@@ -183,7 +183,7 @@ String foldForSearch(String s) => s
 Map<OrderPhase, int> phaseCounts(AppState state, {OrderChannel? channel}) {
   final counts = {for (final p in OrderPhase.values) p: 0};
   for (final order in state.orders) {
-    if (!order.status.isOpen) continue;
+    if (!order.isActive) continue;
     if (channel != null && order.channel != channel) continue;
     final items = state.itemsOf(order.id);
     for (final p in OrderPhase.values) {

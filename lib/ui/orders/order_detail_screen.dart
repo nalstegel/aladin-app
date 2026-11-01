@@ -17,6 +17,7 @@ import '../rugs/edit_pricing_sheet.dart';
 import '../rugs/rug_detail_screen.dart';
 import '../widgets/common.dart';
 import '../widgets/undo_snackbar.dart';
+import 'archive_actions.dart';
 import 'call_customer.dart';
 import 'edit_customer_sheet.dart';
 import 'edit_order_screen.dart';
@@ -44,7 +45,7 @@ class OrderDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text('Naročilo ${order.number}'),
         actions: [
-          if (order.status.isOpen)
+          if (order.isActive)
             IconButton(
               tooltip: 'Uredi naročilo',
               icon: const Icon(Icons.edit_outlined),
@@ -66,7 +67,8 @@ class OrderDetailScreen extends ConsumerWidget {
             ),
           ),
           // Zaključeno naročilo hrani dokazilo o vračilu — tega ne brišemo.
-          if (order.status.isOpen)
+          // An archived order has to be restored from the archive first.
+          if (order.isActive)
             IconButton(
               tooltip: 'Izbriši naročilo',
               icon: const Icon(Icons.delete_outline, color: AppColors.danger),
@@ -78,12 +80,16 @@ class OrderDetailScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
         children: [
+          if (order.isArchived) ...[
+            _archivedBanner(context, repo, order),
+            const SizedBox(height: 10),
+          ],
           _header(context, ref, ready, items.length),
           SectionHeader(
             'Podatki',
             // Ime, telefon in naslov se popravijo kar tu (V10 §1); "Zamenjaj
             // stranko" ostane v Uredi naročilo samo za pravo menjavo.
-            trailing: order.status.isOpen
+            trailing: order.isActive
                 ? TextButton.icon(
                     onPressed: () => EditCustomerSheet.show(context, orderId),
                     icon: const Icon(Icons.edit_outlined, size: 18),
@@ -159,7 +165,7 @@ class OrderDetailScreen extends ConsumerWidget {
           SectionHeader(
             'Kosi',
             subtitle: 'Vsak kos ima svojo QR etiketo in svojo pot.',
-            trailing: order.status.isOpen
+            trailing: order.isActive
                 ? TextButton.icon(
                     onPressed: () {
                       final item = repo.addItemToOrder(orderId);
@@ -177,12 +183,12 @@ class OrderDetailScreen extends ConsumerWidget {
               item: item,
               // Vrsto, mere, doplačila in ceno je mogoče popraviti, ko je kos
               // obračunan; prej teh podatkov še ni.
-              onEdit: order.status.isOpen &&
+              onEdit: order.isActive &&
                       item.isMeasured &&
                       item.status != RugStatus.returned
                   ? () => EditPricingSheet.show(context, item)
                   : null,
-              onDelete: order.status.isOpen && items.length > 1
+              onDelete: order.isActive && items.length > 1
                   ? () => _confirmRemoveItem(context, repo, item)
                   : null,
             ),
@@ -199,9 +205,65 @@ class OrderDetailScreen extends ConsumerWidget {
             const SectionHeader('Dokazilo o vračilu'),
             _proof(order.returnProof!),
           ],
+          // At the very bottom, small and grey like "Zaključi brez podpisa": a
+          // rare action for old orders, not a workflow step. A completed order
+          // is already in no list, so it cannot be archived.
+          if (order.isActive) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: TextButton(
+                onPressed: () =>
+                    confirmArchiveOrder(context, repo, order, items.length),
+                child: const Text(
+                  'Premakni v arhiv',
+                  style: TextStyle(color: AppColors.textMuted),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       bottomNavigationBar: _actions(context, ref, ready, items.length),
+    );
+  }
+
+  /// An archived order is read-only; the only action is restoring it.
+  Widget _archivedBanner(
+    BuildContext context,
+    Repository repo,
+    WorkOrder order,
+  ) {
+    return AppCard(
+      borderColor: AppColors.textMuted.withValues(alpha: 0.4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.archive_outlined,
+                  size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'V arhivu od ${Fmt.date(order.archivedAt)}. Naročilo ni več '
+                  'v zavihkih, števcih in statistiki.',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => restoreFromArchive(context, repo, order),
+              icon: const Icon(Icons.unarchive_outlined, size: 18),
+              label: const Text('Vrni iz arhiva'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -382,7 +444,7 @@ class OrderDetailScreen extends ConsumerWidget {
   ) {
     final order = ref.watch(repositoryProvider).order(orderId)!;
     final repo = ref.read(repositoryProvider.notifier);
-    if (!order.status.isOpen) return null;
+    if (!order.isActive) return null;
 
     Widget wrap(Widget child) => Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
