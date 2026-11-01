@@ -22,7 +22,12 @@ void main() {
     final store = InMemoryStore();
     await store.save(buildSeedState().copyWith(orders: [], items: []));
     container = ProviderContainer(
-      overrides: [storeProvider.overrideWithValue(store)],
+      overrides: [
+        storeProvider.overrideWithValue(store),
+        // Pripravljeno / Dostave so odvisne od današnjega dne; periodični
+        // časovnik ure bi po testu ostal viseti.
+        minuteClockProvider.overrideWith((ref) => Stream.value(DateTime.now())),
+      ],
     );
     await container.read(repositoryProvider.notifier).init();
     container.read(repositoryProvider.notifier).setCurrentUser('u-marko');

@@ -213,7 +213,8 @@ class OrderCard extends ConsumerWidget {
         icon = Icons.schedule;
         text = order.deliveryAt == null
             ? 'Za vračilo · ${order.customerAddress}'
-            : '${Fmt.time(order.deliveryAt)} · ${order.customerAddress}';
+            : '${Fmt.dayWindow(order.deliveryAt, order.deliveryWindowEnd)} · '
+                '${order.customerAddress}';
       case OrderStatus.awaitingCollection:
         icon = Icons.hourglass_empty;
         text = 'Čaka od ${Fmt.dateShort(order.readyAt)} · ${order.customerPhone}';

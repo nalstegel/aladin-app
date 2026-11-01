@@ -10,8 +10,11 @@ import 'app_state.dart';
 /// * **Čaka pranje** in **Sušenje** prikazujeta posamezne kose, grupirane po
 ///   naročilu — pri pranju in sušenju delamo s posameznim tepihom.
 ///
-/// **Dostave** je manifest robe v kombiju: samo naročila za dostavo, ki so bila
-/// označena V kombi. Brez tega ostanejo v Pripravljeno.
+/// **Dostave** je zjutraj pregled vsega, kar ta dan peljemo: naročila za
+/// dostavo, ki imajo dogovorjen dan vračila danes (ali prej, če še niso
+/// predana), in ročno označena V kombi. Brez termina in brez kombija ostanejo v
+/// Pripravljeno. Premik je samo posledica datuma (`WorkOrder.isDeliveryDay`),
+/// nov status ne obstaja.
 ///
 /// Zaključena naročila tu niso prikazana — najdeš jih v zgodovini stranke.
 enum OrderPhase { intake, washing, drying, ready, deliveries }
@@ -43,21 +46,26 @@ extension OrderPhaseX on OrderPhase {
   /// Ali se naročilo pokaže v tem zavihku. Naročila in Pripravljeno sta
   /// izključujoča (celo naročilo še ni v procesu / je v celoti pripravljeno),
   /// Čaka pranje in Sušenje pa pokažeta naročilo, če je vsaj en kos tam.
-  bool containsOrder(WorkOrder order, List<RugItem> items) {
+  ///
+  /// Pripravljeno in Dostave sta odvisna od datuma, zato [now] (privzeto
+  /// zdaj) odloča, ali je dogovorjeni dan vračila že prišel.
+  bool containsOrder(WorkOrder order, List<RugItem> items, {DateTime? now}) {
     if (!order.isActive) return false;
     return switch (this) {
       OrderPhase.intake => order.status == OrderStatus.scheduledPickup,
-      // Pripravljeno: v celoti pripravljeno in še ne v kombiju.
-      OrderPhase.ready => order.status.isHandoverReady && !order.isInVan,
-      OrderPhase.deliveries => order.isInVan,
+      // Pripravljeno: v celoti pripravljeno in še ne na seznamu za dostavo.
+      OrderPhase.ready =>
+        order.status.isHandoverReady &&
+            !order.isInDeliveries(now ?? DateTime.now()),
+      OrderPhase.deliveries => order.isInDeliveries(now ?? DateTime.now()),
       _ => items.any(containsItem),
     };
   }
 }
 
-/// Vrstni red naročil v kombiju (V10 §3): privzeto po ID-ju, kot povsod. Ko
+/// Vrstni red naročil v Dostavah (V10 §3): privzeto po ID-ju, kot povsod. Ko
 /// uporabnik z vlečenjem spremeni vrstni red, se ta shrani v `vanOrder` in
-/// ostane — ročno razvrščena naročila so pred njimi, naročila, ki so v kombi
+/// ostane — ročno razvrščena naročila so pred njimi, naročila, ki so v Dostave
 /// prišla pozneje (brez številke), pa za njimi, spet po ID-ju.
 List<WorkOrder> sortedForVan(Iterable<WorkOrder> orders) {
   return orders.toList()
@@ -76,9 +84,14 @@ List<WorkOrder> sortedForVan(Iterable<WorkOrder> orders) {
 
 /// Zavihki, v katerih se naročilo trenutno nahaja — za prikaz rezultatov
 /// iskanja ("v katerem tabu je").
-List<OrderPhase> phasesOf(WorkOrder order, List<RugItem> items) => [
+List<OrderPhase> phasesOf(
+  WorkOrder order,
+  List<RugItem> items, {
+  DateTime? now,
+}) =>
+    [
       for (final p in OrderPhase.values)
-        if (p.containsOrder(order, items)) p,
+        if (p.containsOrder(order, items, now: now)) p,
     ];
 
 /// Kosi enega naročila v zavihku Čaka pranje / Sušenje.
@@ -180,7 +193,11 @@ String foldForSearch(String s) => s
     .replaceAll('đ', 'd');
 
 /// Števci ob zavihkih: pri Čaka pranje / Sušenje so to kosi, drugje naročila.
-Map<OrderPhase, int> phaseCounts(AppState state, {OrderChannel? channel}) {
+Map<OrderPhase, int> phaseCounts(
+  AppState state, {
+  OrderChannel? channel,
+  DateTime? now,
+}) {
   final counts = {for (final p in OrderPhase.values) p: 0};
   for (final order in state.orders) {
     if (!order.isActive) continue;
@@ -189,7 +206,7 @@ Map<OrderPhase, int> phaseCounts(AppState state, {OrderChannel? channel}) {
     for (final p in OrderPhase.values) {
       if (p.showsItems) {
         counts[p] = counts[p]! + items.where(p.containsItem).length;
-      } else if (p.containsOrder(order, items)) {
+      } else if (p.containsOrder(order, items, now: now)) {
         counts[p] = counts[p]! + 1;
       }
     }

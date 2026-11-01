@@ -168,6 +168,16 @@ void main() {
   });
 
   group('Dostave: ročni vrstni red', () {
+    // Demo naročilo z dogovorjenim vračilom danes je po novem tudi v Dostavah
+    // (dan vračila, ne kombi), zato bi zasedlo mesto v vrstnem redu. Ti testi
+    // štejejo samo svoja naročila.
+    setUp(() {
+      final now = DateTime.now();
+      for (final o in repo.state.orders.toList()) {
+        if (o.isInDeliveries(now)) repo.deleteOrder(o.id);
+      }
+    });
+
     test('brez ročnega urejanja so naročila po ID-ju, ne po nalaganju', () {
       final a = create(channel: OrderChannel.delivery);
       final b = create(channel: OrderChannel.delivery);

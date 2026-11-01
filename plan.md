@@ -814,7 +814,7 @@ Pripravljeno → Dostave → Predaja / podpis.
   (`returnReminderDays`), siva opomba.
 - ✔ **V kombi** je zastavica `WorkOrder.inVanAt` (ne status): `_recompute` jo (in
   `calledAt`) počisti, ko naročilo ni več pripravljeno za predajo. **Dostave** =
-  samo `isInVan`; filtri Vse/LJ/MB/CE/DOL, telefon = klic, naslov = Maps,
+  samo `isInVan` (*preklicano v §4.16: zdaj tudi dogovorjen dan vračila*); filtri Vse/LJ/MB/CE/DOL, telefon = klic, naslov = Maps,
   ~~**Odpri pot**~~ (odstranjeno v V10 §4.12), Vrni (ReturnFlow) in Iz kombija
   (undo).
 - **Brez "Zamuja":** odstranjeno z OrderCard, Home in iz zvonca (`AlertKind`
@@ -1090,6 +1090,75 @@ out of the live flow. Nothing is lost — items, prices, history and QR codes st
   intrinsic dimensions"). It fires without any archive involved, and no existing
   test pumps that screen. Release builds skip the assert; check the QR size there.
   For that reason the rug-detail archived banner / hidden action bar is untested.
+
+### 4.16 — Planirana dostava iz Pripravljeno — DONE v kodi (2026-11-01)
+Ticket „Planirana dostava": ko stranko pokličemo in se dogovorimo za konkreten
+termin vračila, je naročilo na pravi dan samo v Dostavah — brez V kombi in brez
+dodatnega planiranja. **Brez novega statusa**: premik je izpeljan iz datuma.
+⚑ = odločitev, ki je ni podal lastnik.
+
+- **Pravilo** (`WorkOrder.isDeliveryDay` / `isInDeliveries`, `models/order.dart`):
+  naročilo je v Dostavah, če je `awaitingDelivery`, ni arhivirano in ima
+  `deliveryAt` na današnji dan ali prej, ALI je ročno V kombi. Šteje koledarski
+  dan, ne ura (zjutraj mora biti na seznamu vse za danes). Pripravljeno =
+  pripravljeno za predajo in ne v Dostavah. Isti predikat uporabljajo
+  `OrderPhase.containsOrder`, `phaseCounts`, `todayDeliveriesProvider` (Danes →
+  Vračila danes), dnevni povzetek v zvoncu in `Repository.reorderVan`, zato se
+  seznami ne razhajajo. `containsOrder` / `phasesOf` / `phaseCounts` imajo
+  neobvezen `now` (testi).
+- **Podatki:** `WorkOrder.deliveryAt` (obstoječe polje „Dogovorjeno vračilo",
+  začetek okna) + novo `deliveryWindowEnd` (isti dan, null = samo ura). Brez
+  migracije: stari dokumenti brez polja berejo kot brez konca okna.
+  `Repository.setReturnTerm(orderId, start:, end:)` — `start == null` termin
+  odstrani. Neveljaven konec (pred začetkom, drug dan) se zavrže.
+- **Rok → Uredi** (`order_detail_screen.dart`): pri naročilu, ki ga vračamo mi,
+  vrstica Rok pokaže dogovorjen termin („Jutri, 3. 11. · 08:00–10:00") in ima
+  Uredi → `ReturnTermSheet` (`return_term_sheet.dart`: datum + Od/Do, Shrani /
+  Odstrani termin). Sheet samo vrne izbiro; `editReturnTerm` jo zapiše in pokaže
+  potrditev. Isti izbirnik (`ReturnTermTile`) je zdaj tudi v Novo / Uredi
+  naročilo namesto prejšnje vrstice datum+ura, da dva vnosa istega polja ne
+  razhajata (stari je pustil zastarel konec okna).
+- ⚑ **Rok je zdaj dogovorjen termin, ne `dueAt`.** „Obljubljeni rok" (`dueAt`,
+  privzeto +7 dni) ostane v bazi in se ureja v Uredi naročilo; ko termin obstaja,
+  Rok kaže termin. Če bi `dueAt` postal termin, bi se vsako naročilo samo
+  premaknilo v Dostave 7 dni po sprejemu. Stara vrstica „Vračilo" je združena z
+  Rokom; pri zaključenih naročilih ostane.
+- **Stranka pride po preproge:** `setReturnTerm` vrne false, Rok nima Uredi, in
+  ker je status `awaitingCollection`, `isDeliveryDay` nikoli ne drži. Menjava
+  načina na „Stranka" v Uredi naročilo termin pobriše.
+- **V kombi ni več pogoj**, a ostane kot ročna pot za naročilo brez termina
+  (obstoječi testi). Naročilo, ki je v Dostavah zaradi dne, nima „Iz kombija"
+  (nima pomena — termin spremeniš v Rok → Uredi), na podrobnostih pa je na ta dan
+  glavna akcija vračilo namesto V kombi.
+- ⚑ **Zamujen dan:** naročilo z dnevom v preteklosti ostane v Dostavah, dokler ni
+  predano (drugače bi se po polnoči tiho vrnilo v Pripravljeno); v Dostavah je
+  okno izpisano z datumom („Včeraj, 31. 10. · 09:00–11:00"), današnje samo z uro.
+- ⚑ **Ura je obvezna** (Shrani je onemogočen, dokler ni izbrana; datum privzeto
+  jutri, preteklih dni sheet ne ponudi). Dostave so razvrščene kot prej (ID /
+  ročno vlečenje, `sortedForVan`), ne po uri okna — če jih lastnik želi po uri, je
+  to ena primerjava v `sortedForVan`.
+- **`reorderVan`** zdaj razvršča vsa naročila v Dostavah (ne samo V kombi), sicer
+  bi vlečenje planiranega naročila tiho ne naredilo nič. `vanOrder` se pobriše, ko
+  se dan termina spremeni in naročilo ni V kombiju (nov dan = nova pot).
+- **Premik ob polnoči:** Pripravljeno, Dostave, števci in Danes opazujejo
+  `todayProvider` (polnoč, spremeni se enkrat na dan; izpeljan iz
+  `minuteClockProvider`, ki ga je prej imel samo zvonec in je zdaj v
+  `providers.dart`). **Test widgeta, ki izriše te zaslone, mora nadomestiti
+  `minuteClockProvider` s `Stream.value(...)`**, sicer periodični časovnik ostane
+  viseti („A Timer is still pending").
+- `Fmt.timeRange`: enaka začetna in končna ura se izpiše kot ena ura („08:00", ne
+  „08:00–08:00") — velja tudi za prevzem. Novo `Fmt.dayWindow`.
+  `PickupWindowPicker` ima neobvezna `dateLabel` in `firstDate`.
+- **Seed:** demo naročilo `awaitingDelivery` z `deliveryAt` danes je zdaj tudi v
+  Dostavah (prej samo v Vračila danes). `test/v10_test.dart` (ročni vrstni red) ga
+  izbriše, da šteje samo svoja naročila.
+- **Testi:** `test/return_term_test.dart` (43: premik po datumu, meja dneva in
+  meseca, sprememba/odstranitev termina, Stranka pride, okno, števci, Danes,
+  vrstni red, zasloni Rok/sheet/Pripravljeno/Dostave/Uredi naročilo).
+  **Ni preverjeno na napravi:** vizualno ni preverjeno — vrstica Uredi pri Roku
+  na ozkih telefonih, sheet z urnim kolesom, vrstica z oknom na kartici Dostav.
+  Izbira ure v sheetu (kolo `CupertinoDatePicker`) ni pokrita s testom widgeta;
+  sheet z že izbranim terminom je.
 
 1. Read this file fully.
 2. Check `flutter --version` works; if not, see Section 2 for how Flutter

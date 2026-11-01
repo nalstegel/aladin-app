@@ -22,12 +22,17 @@ class Fmt {
   static String time(DateTime? d) => d == null ? '—' : _time.format(d);
   static String dateTime(DateTime? d) => d == null ? '—' : _dateTime.format(d);
 
-  /// "8:00–10:00" za časovno okno prevzema, ali samo uro, če okno nima konca.
+  /// "08:00–10:00" za časovno okno prevzema ali vračila, ali samo uro, če okno
+  /// nima konca ali se konča ob začetku (točna ura).
   static String timeRange(DateTime? start, DateTime? end) {
     if (start == null) return '—';
-    if (end == null) return time(start);
+    if (end == null || end == start) return time(start);
     return '${time(start)}–${time(end)}';
   }
+
+  /// "Jutri, 3. 11. · 08:00–10:00" — dan in časovno okno dogovorjenega vračila.
+  static String dayWindow(DateTime? start, DateTime? end) =>
+      start == null ? '—' : '${dayHeader(start)} · ${timeRange(start, end)}';
 
   static String weekday(DateTime d) => _dni[d.weekday - 1];
 

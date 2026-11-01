@@ -24,6 +24,7 @@ import 'edit_order_screen.dart';
 import 'labels_screen.dart';
 import 'pickup_sheet.dart';
 import 'return_flow_screen.dart';
+import 'return_term_sheet.dart';
 
 class OrderDetailScreen extends ConsumerWidget {
   const OrderDetailScreen({super.key, required this.orderId});
@@ -128,10 +129,30 @@ class OrderDetailScreen extends ConsumerWidget {
                     '${Fmt.date(order.pickupAt)} '
                         '${Fmt.timeRange(order.pickupAt, order.pickupWindowEnd)}',
                   ),
-                if (order.deliveryAt != null)
-                  _InfoRow('Vračilo', Fmt.dateTime(order.deliveryAt)),
-                if (order.dueAt != null)
-                  _InfoRow('Rok', Fmt.dateTime(order.dueAt)),
+                // Naročilo, ki ga vračamo mi: Rok je dogovorjen termin vračila
+                // in ga lahko urediš kar tu — na izbrani dan se naročilo samo
+                // pokaže v Dostavah. Stranka pride po preproge: tega ni.
+                if (order.isActive && order.handover == HandoverMode.weDeliver)
+                  _InfoRow(
+                    'Rok',
+                    order.deliveryAt != null
+                        ? Fmt.dayWindow(
+                            order.deliveryAt,
+                            order.deliveryWindowEnd,
+                          )
+                        : Fmt.dateTime(order.dueAt),
+                    actionLabel: 'Uredi',
+                    onAction: () => editReturnTerm(context, ref, order),
+                  )
+                else ...[
+                  if (order.deliveryAt != null)
+                    _InfoRow(
+                      'Vračilo',
+                      Fmt.dayWindow(order.deliveryAt, order.deliveryWindowEnd),
+                    ),
+                  if (order.dueAt != null)
+                    _InfoRow('Rok', Fmt.dateTime(order.dueAt)),
+                ],
                 if (order.calledAt != null)
                   _InfoRow(
                     'Klicano',
@@ -493,8 +514,10 @@ class OrderDetailScreen extends ConsumerWidget {
         ),
       );
       // Dostava: glavna akcija je V kombi (V8 §4); ko je naročilo v kombiju,
-      // je glavna akcija vračilo, V Pripravljeno pa ga vrne Iz kombija.
+      // je glavna akcija vračilo, V Pripravljeno pa ga vrne Iz kombija. Na
+      // dogovorjen dan vračila je naročilo že v Dostavah, kombi ni potreben.
       if (order.status == OrderStatus.awaitingDelivery) {
+        if (order.isDeliveryDay(DateTime.now())) return wrap(returnButton);
         return wrap(Row(
           children: [
             Expanded(
@@ -768,12 +791,24 @@ enum _ItemAction { edit, remove }
 /// levo pod sabo, da se blok hitro prebere (QA v4 §8). Telefon in naslov sta
 /// klikljiva (klic / Maps) in to kažeta z ikono na desni.
 class _InfoRow extends StatelessWidget {
-  const _InfoRow(this.label, this.value, {this.icon, this.onTap});
+  const _InfoRow(
+    this.label,
+    this.value, {
+    this.icon,
+    this.onTap,
+    this.actionLabel,
+    this.onAction,
+  });
 
   final String label;
   final String value;
   final IconData? icon;
   final VoidCallback? onTap;
+
+  /// Besedna akcija ob koncu vrstice (npr. "Uredi"), ločena od [onTap], ki
+  /// pobarva vrednost kot povezavo.
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -802,6 +837,35 @@ class _InfoRow extends StatelessWidget {
           if (icon != null) ...[
             const SizedBox(width: 8),
             Icon(icon, size: 18, color: AppColors.primary),
+          ],
+          if (actionLabel != null) ...[
+            const SizedBox(width: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: onAction,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.edit_outlined,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      actionLabel!,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ],
       ),

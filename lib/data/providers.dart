@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/order_id.dart';
@@ -24,6 +26,27 @@ final bootstrapProvider = FutureProvider<void>((ref) async {
 final currentUserProvider = Provider<AppUser?>(
   (ref) => ref.watch(repositoryProvider).currentUser,
 );
+
+/// Ura, ki se osveži vsako minuto — obvestila so odvisna od časa (24 h, konec
+/// delovnika), zato se sama od sebe ne smejo ustaviti, ko se podatki ne
+/// spremenijo.
+///
+/// Testi widgetov, ki izrišejo zaslon z [todayProvider] ali zvoncem, jo
+/// morajo nadomestiti z `Stream.value(...)`: periodični časovnik sicer ostane
+/// viseti ("A Timer is still pending").
+final minuteClockProvider = StreamProvider<DateTime>((ref) async* {
+  yield DateTime.now();
+  yield* Stream.periodic(const Duration(minutes: 1), (_) => DateTime.now());
+});
+
+/// Današnji datum (polnoč). Spremeni se samo ob polnoči, zato ga seznami, ki so
+/// odvisni od dneva (Pripravljeno ↔ Dostave), opazujejo: naročilo z
+/// dogovorjenim vračilom se samo prestavi, tudi če aplikacija stoji odprta čez
+/// noč.
+final todayProvider = Provider<DateTime>((ref) {
+  final now = ref.watch(minuteClockProvider).valueOrNull ?? DateTime.now();
+  return DateTime(now.year, now.month, now.day);
+});
 
 /// Odprta naročila enega kanala, po ID-ju.
 final ordersByChannelProvider =
@@ -62,16 +85,13 @@ final todayPickupsProvider = Provider<List<WorkOrder>>((ref) {
   return list;
 });
 
-/// Kaj je danes za vrniti: naročila za dostavo, ki so že V kombiju, ali
-/// imajo dogovorjen termin vračila danes (ali prej).
+/// Kaj je danes za vrniti: natanko naročila v zavihku Dostave — dogovorjen
+/// termin vračila danes (ali prej) ali V kombi.
 final todayDeliveriesProvider = Provider<List<WorkOrder>>((ref) {
   final state = ref.watch(repositoryProvider);
+  final today = ref.watch(todayProvider);
   final list = state.orders
-      .where((o) =>
-          o.isActive &&
-          o.status == OrderStatus.awaitingDelivery &&
-          (o.inVanAt != null ||
-              (o.deliveryAt != null && !_isAfterToday(o.deliveryAt!))))
+      .where((o) => o.isActive && o.isInDeliveries(today))
       .toList();
   list.sort((a, b) => compareOrderIds(a.id, b.id));
   return list;
