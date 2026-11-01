@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
 import '../../core/launch.dart';
+import '../../core/order_id.dart';
 import '../../core/theme.dart';
 import '../../data/order_phases.dart';
 import '../../data/providers.dart';
@@ -117,10 +118,7 @@ class _ReadyListState extends ConsumerState<ReadyList> {
             .where((o) => widget.channel == null || o.channel == widget.channel)
             .where((o) => OrderPhase.ready.containsOrder(o, state.itemsOf(o.id)))
             .toList()
-          ..sort(
-            (a, b) =>
-                (a.readyAt ?? a.createdAt).compareTo(b.readyAt ?? b.createdAt),
-          );
+          ..sort((a, b) => compareOrderIds(a.id, b.id));
 
     if (all.isEmpty) {
       return const EmptyState(
@@ -430,9 +428,10 @@ ButtonStyle _smallButton() => FilledButton.styleFrom(
 /// samo naročila, označena V kombi; naročilo ga zapusti šele z vračilom
 /// (preverjanje kosov → podpis → Vrnjeno) ali z "Iz kombija".
 ///
-/// Vrstni red je ročen: kartico primeš za ročaj (ali jo dolgo pritisneš) in
-/// povlečeš gor/dol. Shrani se v bazi (`WorkOrder.vanOrder`), zato ostane po
-/// menjavi zavihka in ponovnem zagonu. Poti ne generiramo — ruto sestavi
+/// Privzeto so naročila po ID-ju kot povsod. Ročno jih urediš tako, da kartico
+/// primeš za ročaj (ali jo dolgo pritisneš) in povlečeš gor/dol. Ročni vrstni
+/// red se shrani v bazi (`WorkOrder.vanOrder`), zato ostane po menjavi zavihka
+/// in ponovnem zagonu; naročila, dodana pozneje, pridejo za urejena. Poti ne generiramo — ruto sestavi
 /// voznik sproti in Maps odpre sam.
 class DeliveriesList extends ConsumerStatefulWidget {
   const DeliveriesList({super.key, this.channel});

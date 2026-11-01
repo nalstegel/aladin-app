@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
+import '../../core/order_id.dart';
 import '../../core/theme.dart';
 import '../../data/navigation.dart';
 import '../../data/order_phases.dart';
@@ -338,7 +339,7 @@ class _FilterSheet extends ConsumerWidget {
 }
 
 /// Zavihek "Naročila": cela naročila, ki še niso prišla v proces — v praksi
-/// skoraj vedno naši planirani prevzemi. Najbližji termin zgoraj.
+/// skoraj vedno naši planirani prevzemi. Najmanjši ID zgoraj.
 class _IntakeList extends ConsumerWidget {
   const _IntakeList();
 
@@ -354,11 +355,7 @@ class _IntakeList extends ConsumerWidget {
               (o) => OrderPhase.intake.containsOrder(o, state.itemsOf(o.id)),
             )
             .toList()
-          ..sort(
-            (a, b) => (a.pickupAt ?? a.createdAt).compareTo(
-              b.pickupAt ?? b.createdAt,
-            ),
-          );
+          ..sort((a, b) => compareOrderIds(a.id, b.id));
 
     if (list.isEmpty) {
       return _empty(
@@ -390,7 +387,7 @@ class _IntakeList extends ConsumerWidget {
 }
 
 /// Zavihka "Čaka pranje" in "Sušenje": posamezni kosi, grupirani po
-/// naročilu, najstarejši prihod zgoraj.
+/// naročilu, najmanjši ID zgoraj.
 class _ItemGroupList extends ConsumerWidget {
   const _ItemGroupList({required this.phase});
 
@@ -603,7 +600,7 @@ class _SearchResults extends ConsumerWidget {
             .where((o) => o.status.isOpen)
             .where((o) => matchesSearch(o, state.itemsOf(o.id), query))
             .toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          ..sort((a, b) => compareOrderIds(a.id, b.id));
 
     if (results.isEmpty) {
       return const EmptyState(

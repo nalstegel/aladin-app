@@ -168,14 +168,21 @@ void main() {
   });
 
   group('Dostave: ročni vrstni red', () {
-    test('novo naročilo v kombiju je vedno na koncu', () {
-      final a = inVan();
-      final b = inVan();
-      final c = inVan();
+    test('brez ročnega urejanja so naročila po ID-ju, ne po nalaganju', () {
+      final a = create(channel: OrderChannel.delivery);
+      final b = create(channel: OrderChannel.delivery);
+      final c = create(channel: OrderChannel.delivery);
+      for (final o in [a, b, c]) {
+        finishAll(o);
+      }
+      // V kombi gredo v obratnem vrstnem redu.
+      for (final o in [c, a, b]) {
+        repo.sendToVan(o.id);
+      }
       expect(vanIds(), [a.id, b.id, c.id]);
       expect(
-        [a, b, c].map((o) => repo.state.order(o.id)!.vanOrder).toList(),
-        [0, 1, 2],
+        [a, b, c].map((o) => repo.state.order(o.id)!.vanOrder),
+        everyElement(isNull),
       );
     });
 
@@ -186,10 +193,26 @@ void main() {
 
       repo.reorderVan([c.id, a.id, b.id]);
       expect(vanIds(), [c.id, a.id, b.id]);
+      expect(
+        [c, a, b].map((o) => repo.state.order(o.id)!.vanOrder).toList(),
+        [0, 1, 2],
+      );
+    });
 
-      // Novo naročilo gre še vedno na konec.
+    test('ročni vrstni red ostane, novo naročilo pride za urejena', () {
+      // Najnižji ID, a v kombi gre šele po ročnem urejanju.
+      final early = create(channel: OrderChannel.delivery);
+      finishAll(early);
+      final a = inVan();
+      final b = inVan();
+      final c = inVan();
+
+      repo.reorderVan([c.id, a.id, b.id]);
       final d = inVan();
       expect(vanIds(), [c.id, a.id, b.id, d.id]);
+
+      repo.sendToVan(early.id);
+      expect(vanIds(), [c.id, a.id, b.id, early.id, d.id]);
     });
 
     test('vrstni red preživi serializacijo (ponovni zagon)', () {
@@ -208,34 +231,44 @@ void main() {
       final mb1 = inVan(location: OrderLocation.maribor);
       final lj2 = inVan();
       final mb2 = inVan(location: OrderLocation.maribor);
-      expect(vanIds(), [lj1.id, mb1.id, lj2.id, mb2.id]);
+      // Privzeto po ID-ju: najprej LJ, nato MB.
+      expect(vanIds(), [lj1.id, lj2.id, mb1.id, mb2.id]);
 
       // Uporabnik vidi samo MB in zamenja obe.
       repo.reorderVan([mb2.id, mb1.id]);
-      // MB zasedeta svoji prejšnji mesti (1 in 3); LJ ostaneta na 0 in 2.
-      expect(vanIds(), [lj1.id, mb2.id, lj2.id, mb1.id]);
+      // MB zasedeta svoji prejšnji mesti (2 in 3); LJ ostaneta na 0 in 1.
+      expect(vanIds(), [lj1.id, lj2.id, mb2.id, mb1.id]);
     });
 
-    test('Iz kombija počisti vrstni red; ponovno V kombi gre na konec', () {
+    test('Iz kombija počisti vrstni red; ponovno V kombi gre za urejena', () {
       final a = inVan();
       final b = inVan();
+      repo.reorderVan([b.id, a.id]);
       repo.removeFromVan(a.id);
       expect(repo.state.order(a.id)!.vanOrder, isNull);
 
       repo.sendToVan(a.id);
+      expect(repo.state.order(a.id)!.vanOrder, isNull);
       expect(vanIds(), [b.id, a.id]);
     });
 
-    test('naročila brez številke (stara) so pred urejenimi', () {
+    test('naročila brez številke so za ročno urejenimi, po ID-ju', () {
       final a = inVan();
       final b = inVan();
-      // Posnetek iz časa pred ročnim razvrščanjem: brez vanOrder.
-      final legacy = repo.state.order(a.id)!;
+      final c = inVan();
+      // Samo c je bil ročno prestavljen.
       final orders = [
-        WorkOrder.fromJson({...legacy.toJson(), 'vanOrder': null}),
-        repo.state.order(b.id)!,
+        for (final o in [a, b, c])
+          WorkOrder.fromJson({
+            ...repo.state.order(o.id)!.toJson(),
+            'vanOrder': o.id == c.id ? 0 : null,
+          }),
       ];
-      expect(sortedForVan(orders).map((o) => o.id), [a.id, b.id]);
+      expect(sortedForVan(orders.reversed).map((o) => o.id), [
+        c.id,
+        a.id,
+        b.id,
+      ]);
     });
 
     test('reorderVan prezre naročila, ki niso v kombiju', () {
@@ -350,6 +383,18 @@ void main() {
       expect(uncalled, hasLength(1));
       expect(uncalled.single.title, '3 pripravljena naročila še niso klicana.');
       expect(uncalled.single.body, 'LJ-001, LJ-002, LJ-003');
+    });
+
+    test('nepoklicana so po ID-ju, čas obvestila po zadnjem 24 h', () {
+      final alerts = buildAlerts([
+        order('LJ-002', readyAt: base.subtract(const Duration(hours: 30))),
+        order('LJ-001', readyAt: base.subtract(const Duration(hours: 25))),
+      ], base);
+
+      final uncalled = alerts.singleWhere((a) => a.kind == AlertKind.uncalled);
+      expect(uncalled.body, 'LJ-001, LJ-002');
+      // Mlajše pripravljeno (LJ-001) je prekoračilo 24 h pred eno uro.
+      expect(uncalled.at, base.subtract(const Duration(hours: 1)));
     });
 
     test('pred 24 h ni obvestila', () {

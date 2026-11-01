@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/order_id.dart';
 import '../core/format.dart';
 import '../models/enums.dart';
 import '../models/order.dart';
@@ -111,7 +112,7 @@ List<Alert> buildAlerts(
             !now.isBefore(o.readyAt!.add(uncalledAfter)),
       )
       .toList()
-    ..sort((a, b) => a.readyAt!.compareTo(b.readyAt!));
+    ..sort((a, b) => compareOrderIds(a.id, b.id));
   if (uncalled.isNotEmpty) {
     list.add(Alert(
       id: 'uncalled:${uncalled.map((o) => o.id).join(',')}',
@@ -119,7 +120,10 @@ List<Alert> buildAlerts(
       title: _uncalledTitle(uncalled.length),
       body: _numbers(uncalled),
       // Obvestilo je nastalo, ko je zadnje od njih prekoračilo 24 h.
-      at: uncalled.last.readyAt!.add(uncalledAfter),
+      at: uncalled
+          .map((o) => o.readyAt!)
+          .reduce((a, b) => a.isAfter(b) ? a : b)
+          .add(uncalledAfter),
       phase: OrderPhase.ready,
     ));
   }

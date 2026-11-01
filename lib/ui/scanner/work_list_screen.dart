@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format.dart';
+import '../../core/order_id.dart';
 import '../../core/theme.dart';
 import '../../data/providers.dart';
 import '../../models/enums.dart';
@@ -31,7 +32,7 @@ class WorkListScreen extends ConsumerWidget {
       return order != null &&
           (order.status.isOpen || status == RugStatus.returned);
     }).toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
+      ..sort((a, b) => compareOrderIds(a.id, b.id));
 
     return Scaffold(
       appBar: AppBar(

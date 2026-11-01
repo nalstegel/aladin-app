@@ -439,18 +439,14 @@ class Repository extends StateNotifier<AppState> {
     updateOrder(order.copyWith(calledAt: DateTime.now()));
   }
 
-  /// Naročilo za dostavo gre v kombi → prestavi se v zavihek Dostave, na konec
-  /// ročnega vrstnega reda.
+  /// Naročilo za dostavo gre v kombi → prestavi se v zavihek Dostave. Dobi
+  /// mesto po ID-ju; šele ko uporabnik ročno uredi vrstni red (`reorderVan`),
+  /// dobi številko `vanOrder` in se novo naročilo uvrsti za ročno urejena.
   void sendToVan(String orderId) {
     final order = state.order(orderId);
     if (order == null || order.status != OrderStatus.awaitingDelivery) return;
     if (order.inVanAt != null) return;
-    final ranks = [
-      for (final o in state.orders)
-        if (o.isInVan && o.vanOrder != null) o.vanOrder!,
-    ];
-    final next = ranks.isEmpty ? 0 : ranks.reduce((a, b) => a > b ? a : b) + 1;
-    updateOrder(order.copyWith(inVanAt: DateTime.now(), vanOrder: next));
+    updateOrder(order.copyWith(inVanAt: DateTime.now()));
   }
 
   /// Ročni vrstni red v Dostavah (V10 §3). [orderedIds] so naročila, kot jih

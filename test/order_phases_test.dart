@@ -43,7 +43,7 @@ void main() {
   List<String> groupIds(OrderPhase phase) =>
       groupsFor(repo.state, phase).map((g) => g.order.id).toList();
 
-  test('kosi istega naročila so ena skupina, starejši prihod zgoraj', () async {
+  test('kosi istega naročila so ena skupina, manjši ID zgoraj', () async {
     final first = newOrder(3);
     await Future<void>.delayed(const Duration(milliseconds: 5));
     final second = newOrder(1);
@@ -68,6 +68,27 @@ void main() {
 
     final washing = groupsFor(repo.state, OrderPhase.washing).where(ours);
     expect(washing.single.items.single.id, '${first.id}-3');
+  });
+
+  test('skupine so po ID-ju, tudi če je kasnejše naročilo prišlo prej', () async {
+    WorkOrder create() => repo.createOrder(
+      customer: customer,
+      location: OrderLocation.ljubljana,
+      channel: OrderChannel.dropoff,
+      handover: HandoverMode.customerCollects,
+      itemCount: 1,
+    );
+    final first = create();
+    final second = create();
+    // Višji ID prispe v delavnico prvi.
+    repo.markOrderPickedUp(second.id);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    repo.markOrderPickedUp(first.id);
+
+    final ids = groupIds(
+      OrderPhase.washing,
+    ).where((id) => id == first.id || id == second.id).toList();
+    expect(ids, [first.id, second.id]);
   });
 
   test('naročilo pred potrditvijo prevzema ni v Čaka pranje', () {
