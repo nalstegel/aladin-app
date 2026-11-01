@@ -34,8 +34,8 @@ void _openOrder(BuildContext context, WorkOrder order) => Navigator.push(
   MaterialPageRoute(builder: (_) => OrderDetailScreen(orderId: order.id)),
 );
 
-/// Vrstica filtrov Vse / LJ / MB / CE / DOL — enaka v Pripravljeno in Dostave
-/// (V10 §2). Regije se berejo iz `OrderLocation.values`, zato nova regija
+/// Vrstica filtrov Vse / LJ / MB / CE / DOL — enaka v Naročila, Pripravljeno in
+/// Dostave (V10 §2). Regije se berejo iz `OrderLocation.values`, zato nova regija
 /// dobi svoj filter sama, brez dela v tem zaslonu.
 class RegionFilterBar extends StatelessWidget {
   const RegionFilterBar({
@@ -82,23 +82,48 @@ class RegionFilterBar extends StatelessWidget {
   }
 }
 
-/// Katere sekcije Pripravljeno so razprte. Privzeto so vse zaprte (V10 §2:
-/// manj scrollanja); izbira ostane, ko zamenjaš zavihek.
-final readyOpenSectionsProvider = StateProvider<Set<String>>(
-  (ref) => const {},
-);
+/// Trije hitri zavihki znotraj Pripravljeno (po stanju naročila, ne po regiji).
+enum ReadyTab {
+  delivery('Za dostavo'),
+  notCalled('Ni klicano'),
+  called('Klicano');
+
+  const ReadyTab(this.label);
+
+  final String label;
+
+  bool contains(WorkOrder o) => switch (this) {
+    ReadyTab.delivery => o.handover == HandoverMode.weDeliver,
+    ReadyTab.notCalled =>
+      o.handover == HandoverMode.customerCollects && o.calledAt == null,
+    ReadyTab.called =>
+      o.handover == HandoverMode.customerCollects && o.calledAt != null,
+  };
+
+  String get emptyTitle => switch (this) {
+    ReadyTab.delivery => 'Ni naročil za dostavo',
+    ReadyTab.notCalled => 'Ni neklicanih strank',
+    ReadyTab.called => 'Nobena stranka še ni klicana',
+  };
+}
+
+/// Izbrani zavihek Pripravljeno. Ostane, ko zamenjaš zavihek strani Naročila
+/// in se vrneš.
+final readyTabProvider = StateProvider<ReadyTab>((ref) => ReadyTab.delivery);
 
 /// Zavihek **Pripravljeno** (V8 §4, V10 §2): cela naročila, v katerih so vsi
-/// kosi obračunani. En seznam, brez pod-zavihkov:
+/// kosi obračunani. Dva neodvisna filtra, brez drsenja med sekcijami:
 ///
-/// * filtri regij,
-/// * *Za dostavo*: naročilo ostane tu do dogovorjenega dne vračila (Rok →
+/// * zgoraj filtri regij Vse / LJ / MB / CE / DOL,
+/// * pod njimi trije zavihki s števcem, ki takoj zamenjajo seznam:
+///   *Za dostavo*: naročilo ostane tu do dogovorjenega dne vračila (Rok →
 ///   Uredi na podrobnostih), nato se samo prestavi v Dostave. Gumb **V kombi**
 ///   ga tja prestavi ročno, če termina ni,
-/// * *Ni klicano* → klic zabeleži `calledAt` → *Klicano · čaka stranko*
-///   (nič od tega ni rdeče).
+///   *Ni klicano* → klic zabeleži `calledAt` → *Klicano* (nič od tega ni
+///   rdeče).
 ///
-/// Sekcije so zložljive in kažejo število naročil; prazna sekcija je skrita.
+/// Regijski filter velja v vseh treh zavihkih, zato so števci zavihkov števci
+/// izbrane regije. Števci pri regijah pa so vedno čez vse tri zavihke.
 class ReadyList extends ConsumerStatefulWidget {
   const ReadyList({super.key, this.channel});
 
@@ -141,21 +166,8 @@ class _ReadyListState extends ConsumerState<ReadyList> {
     final shown = all
         .where((o) => _region == null || o.location == _region)
         .toList();
-    final delivery = shown
-        .where((o) => o.handover == HandoverMode.weDeliver)
-        .toList();
-    final notCalled = shown
-        .where(
-          (o) =>
-              o.handover == HandoverMode.customerCollects && o.calledAt == null,
-        )
-        .toList();
-    final waiting = shown
-        .where(
-          (o) =>
-              o.handover == HandoverMode.customerCollects && o.calledAt != null,
-        )
-        .toList();
+    final tab = ref.watch(readyTabProvider);
+    final list = shown.where(tab.contains).toList();
 
     return Column(
       children: [
@@ -165,36 +177,26 @@ class _ReadyListState extends ConsumerState<ReadyList> {
           total: all.length,
           countOf: (l) => all.where((o) => o.location == l).length,
         ),
-        UnitCaption(Fmt.orders(shown.length)),
+        _ReadyTabBar(
+          selected: tab,
+          onSelected: (t) => ref.read(readyTabProvider.notifier).state = t,
+          countOf: (t) => shown.where(t.contains).length,
+        ),
+        UnitCaption(Fmt.orders(list.length)),
         Expanded(
-          child: shown.isEmpty
+          child: list.isEmpty
               ? EmptyState(
                   icon: Icons.inventory_2_outlined,
-                  title: 'Nič ni pripravljeno',
-                  message: 'V regiji ${_region!.code} ni pripravljenih naročil.',
+                  title: tab.emptyTitle,
+                  message: _region == null
+                      ? null
+                      : 'V regiji ${_region!.code} ni takih naročil.',
                 )
-              : ListView(
+              : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
-                  children: [
-                    _ReadySection(
-                      id: 'delivery',
-                      label: 'Za dostavo',
-                      icon: Icons.local_shipping_outlined,
-                      orders: delivery,
-                    ),
-                    _ReadySection(
-                      id: 'notCalled',
-                      label: 'Ni klicano',
-                      icon: Icons.phone_missed_outlined,
-                      orders: notCalled,
-                    ),
-                    _ReadySection(
-                      id: 'waiting',
-                      label: 'Klicano · čaka stranko',
-                      icon: Icons.phone_in_talk_outlined,
-                      orders: waiting,
-                    ),
-                  ],
+                  itemCount: list.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) => _ReadyRow(order: list[i]),
                 ),
         ),
       ],
@@ -202,94 +204,106 @@ class _ReadyListState extends ConsumerState<ReadyList> {
   }
 }
 
-/// Zložljiva sekcija s številom naročil; prazna se ne pokaže.
-class _ReadySection extends ConsumerWidget {
-  const _ReadySection({
-    required this.id,
-    required this.label,
-    required this.icon,
-    required this.orders,
+/// Za dostavo | Ni klicano | Klicano, vsak s številom naročil. Namenoma ni
+/// `TabBar`: ta bi se tepel z vodoravnim poteznim drsanjem zunanjih zavihkov
+/// strani, tu pa zavihek zamenja samo tap.
+class _ReadyTabBar extends StatelessWidget {
+  const _ReadyTabBar({
+    required this.selected,
+    required this.onSelected,
+    required this.countOf,
   });
 
-  final String id;
-  final String label;
-  final IconData icon;
-  final List<WorkOrder> orders;
+  final ReadyTab selected;
+  final ValueChanged<ReadyTab> onSelected;
+  final int Function(ReadyTab) countOf;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (orders.isEmpty) return const SizedBox.shrink();
-    final open = ref.watch(readyOpenSectionsProvider).contains(id);
-
-    void toggle() {
-      final notifier = ref.read(readyOpenSectionsProvider.notifier);
-      final next = {...notifier.state};
-      if (!next.remove(id)) next.add(id);
-      notifier.state = next;
-    }
-
+  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Container(
+        padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          color: AppColors.border.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            for (final t in ReadyTab.values)
+              Expanded(
+                child: _ReadyTabCell(
+                  tab: t,
+                  count: countOf(t),
+                  selected: t == selected,
+                  onTap: () => onSelected(t),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReadyTabCell extends StatelessWidget {
+  const _ReadyTabCell({
+    required this.tab,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ReadyTab tab;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.ready : AppColors.textMuted;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: toggle,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                child: Row(
-                  children: [
-                    Icon(icon, size: 20, color: AppColors.ready),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.ready.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        '${orders.length}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.ready,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      open ? Icons.expand_less : Icons.expand_more,
-                      color: AppColors.textMuted,
-                    ),
-                  ],
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+                color: color,
+              ),
+            ),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                tab.label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                  color: color,
                 ),
               ),
             ),
-            if (open) ...[
-              const Divider(height: 1),
-              for (var i = 0; i < orders.length; i++) ...[
-                if (i > 0) const Divider(height: 1),
-                _ReadyRow(order: orders[i]),
-              ],
-            ],
           ],
         ),
       ),
@@ -367,65 +381,62 @@ class _ReadyRow extends ConsumerWidget {
       );
     }
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
       onTap: () => _openOrder(context, order),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        order.number,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      order.number,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        order.customerName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          order.customerName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        Fmt.pieces(pieces),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    sub,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
                     ),
+                    const SizedBox(width: 6),
+                    Text(
+                      Fmt.pieces(pieces),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            action,
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          action,
+        ],
       ),
     );
   }

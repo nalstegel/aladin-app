@@ -101,58 +101,136 @@ void main() {
   }
 
   group('Pripravljeno', () {
-    testWidgets('sekcije so zaprte, kažejo število, prazne so skrite', (
+    /// Število v zavihku Za dostavo / Ni klicano / Klicano: prvo besedilo v
+    /// stolpcu, v katerem je napis zavihka.
+    String tabCount(WidgetTester tester, String label) {
+      final cell = find
+          .ancestor(of: find.text(label), matching: find.byType(Column))
+          .first;
+      final count = find.descendant(of: cell, matching: find.byType(Text)).first;
+      return tester.widget<Text>(count).data!;
+    }
+
+    testWidgets('trije zavihki s števci; seznam je viden brez razpiranja', (
       tester,
     ) async {
-      ready(); // osebni prevzem, ni klicano
-      ready(channel: OrderChannel.delivery); // za dostavo
+      final collect = ready(); // osebni prevzem, ni klicano
+      final delivery = ready(channel: OrderChannel.delivery); // za dostavo
       await pump(tester, const ReadyList());
 
-      expect(find.text('Za dostavo'), findsOneWidget);
-      expect(find.text('Ni klicano'), findsOneWidget);
-      // Klicano · čaka stranko je prazno → skrito.
-      expect(find.text('Klicano · čaka stranko'), findsNothing);
-      // Zaprto: vrstice (in gumb Pokliči / V kombi) še niso vidne.
-      expect(find.text('Pokliči'), findsNothing);
-      expect(find.text('V kombi'), findsNothing);
-      // Enota je izpisana.
-      expect(find.text('2 naročili'), findsOneWidget);
+      expect(tabCount(tester, 'Za dostavo'), '1');
+      expect(tabCount(tester, 'Ni klicano'), '1');
+      expect(tabCount(tester, 'Klicano'), '0');
+      // Prazen zavihek ni skrit — števec 0 je informacija.
+      expect(find.text('Klicano'), findsOneWidget);
+
+      // Privzeto je izbran Za dostavo in njegov seznam je takoj viden.
+      expect(find.textContaining(delivery.id), findsOneWidget);
+      expect(find.text('V kombi'), findsOneWidget);
+      expect(find.textContaining(collect.id), findsNothing);
+      expect(find.text('1 naročilo'), findsOneWidget);
     });
 
-    testWidgets('vrstni red: filtri → Za dostavo → Ni klicano', (tester) async {
+    testWidgets('klik na zavihek takoj zamenja seznam', (tester) async {
+      final collect = ready();
+      final delivery = ready(channel: OrderChannel.delivery);
+      await pump(tester, const ReadyList());
+
+      await tester.tap(find.text('Ni klicano'));
+      await tester.pump();
+      expect(find.textContaining(collect.id), findsOneWidget);
+      expect(find.text('Pokliči'), findsOneWidget);
+      expect(find.textContaining(delivery.id), findsNothing);
+      expect(find.text('V kombi'), findsNothing);
+
+      await tester.tap(find.text('Za dostavo'));
+      await tester.pump();
+      expect(find.textContaining(delivery.id), findsOneWidget);
+      expect(find.textContaining(collect.id), findsNothing);
+    });
+
+    testWidgets('vrstni red: filtri regij → zavihki → seznam', (tester) async {
+      final delivery = ready(channel: OrderChannel.delivery);
       ready();
-      ready(channel: OrderChannel.delivery);
       await pump(tester, const ReadyList());
 
       final pills = tester.getTopLeft(find.text('Vse (2)')).dy;
-      final delivery = tester.getTopLeft(find.text('Za dostavo')).dy;
-      final notCalled = tester.getTopLeft(find.text('Ni klicano')).dy;
-      expect(pills, lessThan(delivery));
-      expect(delivery, lessThan(notCalled));
+      final tabs = tester.getTopLeft(find.text('Za dostavo')).dy;
+      final row = tester.getTopLeft(find.textContaining(delivery.id)).dy;
+      expect(pills, lessThan(tabs));
+      expect(tabs, lessThan(row));
     });
 
-    testWidgets('filtri regij so dinamični in filtrirajo seznam', (
+    testWidgets('izbrani zavihek ostane, ko se vrneš na seznam', (
       tester,
     ) async {
       ready();
-      ready(location: OrderLocation.maribor, name: 'Marija Kovač');
+      await pump(tester, const ReadyList());
+      await tester.tap(find.text('Ni klicano'));
+      await tester.pump();
+
+      await pump(tester, const SizedBox());
+      await pump(tester, const ReadyList());
+      expect(find.text('Pokliči'), findsOneWidget);
+    });
+
+    testWidgets('regija in zavihek se ujemata: LJ + Ni klicano', (
+      tester,
+    ) async {
+      final lj = ready();
+      final mb = ready(location: OrderLocation.maribor, name: 'Marija Kovač');
+      final mbDelivery = ready(
+        location: OrderLocation.maribor,
+        channel: OrderChannel.delivery,
+        name: 'Janez Novak',
+      );
       await pump(tester, const ReadyList());
 
       for (final l in OrderLocation.values) {
         expect(find.textContaining('${l.code} ('), findsOneWidget);
       }
-      expect(find.text('Ni klicano'), findsOneWidget);
-      expect(find.text('1 naročilo'), findsNothing);
-      expect(find.text('2 naročili'), findsOneWidget);
-
-      await tester.tap(find.text('MB (1)'));
+      await tester.tap(find.text('Ni klicano'));
       await tester.pump();
+      expect(tabCount(tester, 'Ni klicano'), '2');
+      expect(find.textContaining(lj.id), findsOneWidget);
+      expect(find.textContaining(mb.id), findsOneWidget);
+
+      // Regija omeji seznam IN števce zavihkov.
+      await tester.tap(find.text('LJ (1)'));
+      await tester.pump();
+      expect(tabCount(tester, 'Ni klicano'), '1');
+      expect(tabCount(tester, 'Za dostavo'), '0');
+      expect(find.textContaining(lj.id), findsOneWidget);
+      expect(find.textContaining(mb.id), findsNothing);
       expect(find.text('1 naročilo'), findsOneWidget);
+
+      await tester.tap(find.text('MB (2)'));
+      await tester.pump();
+      expect(tabCount(tester, 'Ni klicano'), '1');
+      expect(tabCount(tester, 'Za dostavo'), '1');
+      expect(find.textContaining(mb.id), findsOneWidget);
+      expect(find.textContaining(lj.id), findsNothing);
+
+      // Zavihek velja naprej, regija se ne izgubi.
+      await tester.tap(find.text('Za dostavo'));
+      await tester.pump();
+      expect(find.textContaining(mbDelivery.id), findsOneWidget);
+      expect(find.textContaining(mb.id), findsNothing);
+    });
+
+    testWidgets('prazen zavihek v regiji pove, katere regije ni', (
+      tester,
+    ) async {
+      ready();
+      await pump(tester, const ReadyList());
 
       await tester.ensureVisible(find.text('CE (0)'));
       await tester.tap(find.text('CE (0)'));
       await tester.pump();
-      expect(find.text('V regiji CE ni pripravljenih naročil.'), findsOneWidget);
+      expect(find.text('V regiji CE ni takih naročil.'), findsOneWidget);
+      // Filtri in zavihki ostanejo, da lahko regijo takoj zamenjaš.
+      expect(find.text('Ni klicano'), findsOneWidget);
+      expect(find.text('Vse (1)'), findsOneWidget);
     });
 
     testWidgets('klic iz seznama zabeleži Klicano in premakne naročilo', (
@@ -169,11 +247,17 @@ void main() {
       expect(container.read(repositoryProvider).order(order.id)!.calledAt,
           isNotNull);
       // Izgine iz Ni klicano, pojavi se v Klicano.
-      expect(find.text('Ni klicano'), findsNothing);
-      expect(find.text('Klicano · čaka stranko'), findsOneWidget);
+      expect(tabCount(tester, 'Ni klicano'), '0');
+      expect(tabCount(tester, 'Klicano'), '1');
+      expect(find.text('Ni neklicanih strank'), findsOneWidget);
+
+      await tester.tap(find.text('Klicano'));
+      await tester.pump();
+      expect(find.textContaining(order.id), findsOneWidget);
+      expect(find.textContaining('čaka stranko'), findsOneWidget);
     });
 
-    testWidgets('znotraj sekcije so naročila po ID-ju, ne po pripravi', (
+    testWidgets('znotraj zavihka so naročila po ID-ju, ne po pripravi', (
       tester,
     ) async {
       final repo = container.read(repositoryProvider.notifier);
@@ -216,8 +300,6 @@ void main() {
       final order = ready(channel: OrderChannel.delivery);
       await pump(tester, const ReadyList());
 
-      await tester.tap(find.text('Za dostavo'));
-      await tester.pump();
       await tester.tap(find.text('V kombi'));
       await tester.pump();
       expect(find.text('${order.id} je v kombiju.'), findsOneWidget);
@@ -265,6 +347,52 @@ void main() {
       await tester.enterText(find.byType(TextField), 'LJ-');
       await tester.pump();
       expect(dy(low.id), lessThan(dy(high.id)));
+    });
+
+    testWidgets('zavihek Naročila ima filtre regij, ki samo omejijo seznam', (
+      tester,
+    ) async {
+      final repo = container.read(repositoryProvider.notifier);
+      final customer = repo.state.customers.first;
+      WorkOrder planned(OrderLocation location) => repo.createOrder(
+        customer: customer,
+        location: location,
+        channel: OrderChannel.delivery,
+        handover: HandoverMode.weDeliver,
+        itemCount: 1,
+        pickupAt: DateTime.now().add(const Duration(days: 1)),
+      );
+      final lj = planned(OrderLocation.ljubljana);
+      final mb = planned(OrderLocation.maribor);
+      await pump(tester, const OrdersScreen());
+
+      // Isti filtri kot v Pripravljeno: Vse + vse regije, s števci.
+      expect(find.text('Vse (2)'), findsOneWidget);
+      for (final l in OrderLocation.values) {
+        expect(find.textContaining('${l.code} ('), findsOneWidget);
+      }
+      expect(find.textContaining(lj.id), findsOneWidget);
+      expect(find.textContaining(mb.id), findsOneWidget);
+      expect(find.text('2 naročili'), findsOneWidget);
+
+      await tester.tap(find.text('MB (1)'));
+      await tester.pump();
+      expect(find.textContaining(mb.id), findsOneWidget);
+      expect(find.textContaining(lj.id), findsNothing);
+      expect(find.text('1 naročilo'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('CE (0)'));
+      await tester.tap(find.text('CE (0)'));
+      await tester.pump();
+      expect(find.text('V regiji CE ni novih naročil.'), findsOneWidget);
+
+      // Vse spet pokaže vse; filter ni spremenil podatkov. (Vrstica se je ob
+      // CE odmaknila v desno, zato Vse najprej pripeljemo nazaj v pogled.)
+      await tester.ensureVisible(find.text('Vse (2)'));
+      await tester.tap(find.text('Vse (2)'));
+      await tester.pump();
+      expect(find.textContaining(lj.id), findsOneWidget);
+      expect(find.textContaining(mb.id), findsOneWidget);
     });
   });
 
